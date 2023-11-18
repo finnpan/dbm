@@ -1,0 +1,12 @@
+*.o
+*.so
+*.so.*
+*.a
+
+tcrmgr
+tcrmttest
+tcrtest
+ttserver
+ttulmgr
+ttultest
+
