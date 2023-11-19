@@ -3,6 +3,8 @@
 *.so.*
 *.a
 
+*vscode*
+
 tcrmgr
 tcrmttest
 tcrtest
