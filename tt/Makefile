@@ -2,7 +2,7 @@ VERSION = 1.1.41
 
 LIBRARYFILES = libtt.a libtt.so ttskelmock.so ttskeldir.so ttskelproxy.so ttskelnull.so
 LIBOBJFILES = ttutil.o tculog.o tcrdb.o ttconf.o
-COMMANDFILES = ttserver ttulmgr ttultest tcrtest tcrmttest tcrmgr
+COMMANDFILES = ttserver ttulmgr tcrmgr
 
 CC = gcc
 CPPFLAGS = -I../tc -I. -DNDEBUG -D_GNU_SOURCE=1 -D_REENTRANT -D__EXTENSIONS__
@@ -33,26 +33,6 @@ clean :
 
 check :
 	$(RUNENV) ./tcrmgr version
-	$(RUNENV) ./tcrtest write -cnum 5 -tout 5 -rnd 127.0.0.1 50000
-	$(RUNENV) ./tcrtest write -cnum 5 -tout 5 -nr -rnd 127.0.0.1 50000
-	$(RUNENV) ./tcrtest write -cnum 5 -tout 5 127.0.0.1 50000
-	$(RUNENV) ./tcrtest read -cnum 5 -tout 5 127.0.0.1
-	$(RUNENV) ./tcrtest read -cnum 5 -tout 5 -mul 5 127.0.0.1
-	$(RUNENV) ./tcrtest remove -cnum 5 -tout 5 127.0.0.1
-	$(RUNENV) ./tcrtest rcat -cnum 5 -tout 5 127.0.0.1 50000
-	$(RUNENV) ./tcrtest rcat -cnum 5 -tout 5 -shl 50 127.0.0.1 50000
-	$(RUNENV) ./tcrmgr vanish 127.0.0.1
-	$(RUNENV) ./tcrtest rcat -cnum 5 -tout 5 -dad 127.0.0.1 50000
-	$(RUNENV) ./tcrtest rcat -cnum 5 -tout 5 -ext putcat -xlr 127.0.0.1 50000
-	$(RUNENV) ./tcrtest misc -cnum 5 -tout 5 127.0.0.1 5000
-	$(RUNENV) ./tcrtest wicked -cnum 5 -tout 5 127.0.0.1 5000
-	$(RUNENV) ./tcrmgr inform 127.0.0.1
-	$(RUNENV) ./tcrmgr vanish 127.0.0.1
-	$(RUNENV) ./tcrmttest write -tnum 5 127.0.0.1 5000
-	$(RUNENV) ./tcrmttest read -tnum 5 127.0.0.1
-	$(RUNENV) ./tcrmttest remove -tnum 5 127.0.0.1
-	$(RUNENV) ./tcrmttest write -tnum 5 -ext putcat -rnd 127.0.0.1 5000
-	$(RUNENV) ./tcrmttest typical -tnum 5 127.0.0.1 5000
 	$(RUNENV) ./tcrmgr vanish 127.0.0.1
 	$(RUNENV) ./tcrmgr put 127.0.0.1 one first
 	$(RUNENV) ./tcrmgr put 127.0.0.1 two second
@@ -74,14 +54,7 @@ check :
 	$(RUNENV) ./tcrmgr list -pv 127.0.0.1 > check.out
 	$(RUNENV) ./tcrmgr list -pv -fm f 127.0.0.1 > check.out
 	$(RUNENV) ./tcrmgr http -ih http://127.0.0.1:1978/five > check.out
-	rm -rf ulog ; mkdir -p ulog
-	$(RUNENV) ./ttultest write -lim 10000 ulog 5000
-	$(RUNENV) ./ttultest write -lim 10000 -as ulog 5000
-	$(RUNENV) ./ttultest read ulog
-	rm -rf ulog ; mkdir -p ulog
-	$(RUNENV) ./ttultest thread -lim 10000 ulog 5 5000
-	$(RUNENV) ./ttultest thread -lim 10000 -as ulog 5 5000
-	rm -rf check.out ulog
+	rm -rf ulog check.out
 	@printf '\n'
 	@printf '#================================================================\n'
 	@printf '# Checking completed.\n'
@@ -139,18 +112,6 @@ ttulmgr : ttulmgr.o $(LIBRARYFILES)
 	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS)
 
 
-ttultest : ttultest.o $(LIBRARYFILES)
-	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS)
-
-
-tcrtest : tcrtest.o $(LIBRARYFILES)
-	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS)
-
-
-tcrmttest : tcrmttest.o $(LIBRARYFILES)
-	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS)
-
-
 tcrmgr : tcrmgr.o $(LIBRARYFILES)
 	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS)
 
@@ -165,6 +126,6 @@ tcrdb.o : ttconf.h ttutil.h tcrdb.h
 
 ttskelproxy.o : ttconf.h ttutil.h tcrdb.h
 
-ttserver.o ttulmgr.o ttultest.o tcrtest.o tcrmgr.o : ttconf.h ttutil.h tculog.h tcrdb.h
+ttserver.o ttulmgr.o : ttconf.h ttutil.h tculog.h tcrdb.h
 
 ttserver.o : ttscrext.h
