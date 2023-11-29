@@ -1,6 +1,4 @@
-VERSION = 1.4.48
-
-LIBRARYFILES = libtc.a libtc.so
+LIBRARYFILES = libtc.a libtc.so tcddb.so
 LIBOBJFILES = tcutil.o tchdb.o tcbdb.o tcfdb.o tctdb.o tcadb.o tcconf.o tcmd5.o
 
 CC = gcc
@@ -37,6 +35,10 @@ libtc.a : $(LIBOBJFILES)
 
 libtc.so : $(LIBOBJFILES)
 	$(CC) $(CFLAGS) -shared -o $@ $(LIBOBJFILES) $(LDFLAGS) $(LIBS)
+
+
+tcddb.so : tcddb.o
+	$(CC) $(CFLAGS) -shared -o $@ $< $(LDFLAGS) $(LIBS)
 
 
 tcmd5.o : tcmd5.h

@@ -18,7 +18,6 @@
 #include <tculog.h>
 #include <tcrdb.h>
 #include "ttconf.h"
-#include "ttscrext.h"
 
 #define DEFTHNUM       8                 // default thread number
 #define DEFPIDPATH     "ttserver.pid"    // default name of the PID file
@@ -200,6 +199,19 @@ static void do_http_post(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const 
 static void do_http_delete(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const char *uri);
 static void do_http_options(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const char *uri);
 static void do_term(void *opq);
+
+
+/* for compiling: scrext has been removed. */
+static void *scrextnew(void **screxts, int thnum, int thid, const char *path,
+                       TCADB *adb, TCULOG *ulog, uint32_t sid, TCMDB *stash, TCMDB *lock,
+                       void (*logger)(int, const char *, void *), void *logopq)
+{ assert(0); return NULL; }
+static bool scrextdel(void *scr) { assert(0); return false; }
+static char *scrextcallmethod(void *scr, const char *name,
+                              const void *kbuf, int ksiz,
+                              const void *vbuf, int vsiz, int *sp)
+{ assert(0); return NULL; }
+static bool scrextkill(void *scr) { assert(0); return false; }
 
 
 /* main routine */
@@ -1299,6 +1311,7 @@ static void do_putnr(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   pthread_cleanup_push(free, (buf == stack) ? NULL : buf);
   if(ttsockrecv(sock, buf, rsiz) && !ttsockcheckend(sock)){
     uint8_t code = 0;
+    (void)(code);
     if(mask & ((1ULL << TTSEQPUTNR) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLWRITE))){
       code = 1;
       ttservlog(g_serv, TTLOGINFO, "do_putnr: forbidden");

@@ -1,16 +1,16 @@
-VERSION = 1.1.41
-
-LIBRARYFILES = libtt.a libtt.so ttskelmock.so ttskeldir.so ttskelproxy.so ttskelnull.so
+LIBRARYFILES = libtt.a libtt.so
 LIBOBJFILES = ttutil.o tculog.o tcrdb.o ttconf.o
-COMMANDFILES = ttserver ttulmgr tcrmgr
+COMMANDFILES = ttserver tculmgr tcrmgr
+
+TC_PATH = ../tc
 
 CC = gcc
-CPPFLAGS = -I../tc -I. -DNDEBUG -D_GNU_SOURCE=1 -D_REENTRANT -D__EXTENSIONS__
+CPPFLAGS = -I$(TC_PATH) -I. -DNDEBUG -D_GNU_SOURCE=1 -D_REENTRANT -D__EXTENSIONS__
 CFLAGS = -g -O2 -std=c99 -Wall -fPIC -fsigned-char -O2
-LDFLAGS = -L../tc -L.
+LDFLAGS = -L$(TC_PATH) -L.
 LIBS = -ltc -lbz2 -lz -lresolv -lnsl -ldl -lrt -lpthread -lm -lc
-LDENV = LD_RUN_PATH=../tc:/lib:/usr/lib:/usr/local/lib:.
-RUNENV = LD_LIBRARY_PATH=../tc:/lib:/usr/lib:/usr/local/lib:.
+LDENV = LD_RUN_PATH=$(TC_PATH):/lib:/usr/lib:/usr/local/lib:.
+RUNENV = LD_LIBRARY_PATH=$(TC_PATH):/lib:/usr/lib:/usr/local/lib:.
 
 
 .SUFFIXES :
@@ -72,43 +72,11 @@ libtt.so : $(LIBOBJFILES)
 	$(CC) $(CFLAGS) -shared -o $@ $(LIBOBJFILES) $(LDFLAGS) $(LIBS)
 
 
-ttskelmock.so : ttskelmock.o
-	$(CC) $(CFLAGS) -shared -o $@ $< $(LDFLAGS) $(LIBS)
+ttserver : ttserver.o $(LIBRARYFILES)
+	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS)
 
 
-ttskeldir.so : ttskeldir.o
-	$(CC) $(CFLAGS) -shared -o $@ $< $(LDFLAGS) $(LIBS)
-
-
-ttskelproxy.so : ttskelproxy.o
-	$(CC) $(CFLAGS) -shared -o $@ $< $(LDFLAGS) $(LIBS)
-
-
-ttskelnull.so : ttskelnull.o
-	$(CC) $(CFLAGS) -shared -o $@ $< $(LDFLAGS) $(LIBS)
-
-
-ttskelmock.bundle : ttskelmock.o
-	$(CC) $(CFLAGS) -bundle -flat_namespace -undefined suppress -o $@ $< $(LDFLAGS) $(LIBS)
-
-
-ttskeldir.bundle : ttskeldir.o
-	$(CC) $(CFLAGS) -bundle -flat_namespace -undefined suppress -o $@ $< $(LDFLAGS) $(LIBS)
-
-
-ttskelproxy.bundle : ttskelproxy.o
-	$(CC) $(CFLAGS) -bundle -flat_namespace -undefined suppress -o $@ $< $(LDFLAGS) $(LIBS)
-
-
-ttskelnull.bundle : ttskelnull.o
-	$(CC) $(CFLAGS) -bundle -flat_namespace -undefined suppress -o $@ $< $(LDFLAGS) $(LIBS)
-
-
-ttserver : ttserver.o ttscrext.o $(LIBRARYFILES)
-	$(LDENV) $(CC) $(CFLAGS) -o $@ $< ttscrext.o $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS)
-
-
-ttulmgr : ttulmgr.o $(LIBRARYFILES)
+tculmgr : tculmgr.o $(LIBRARYFILES)
 	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS)
 
 
@@ -116,7 +84,7 @@ tcrmgr : tcrmgr.o $(LIBRARYFILES)
 	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS)
 
 
-ttconf.o ttscrext.o : ttconf.h
+ttconf.o : ttconf.h
 
 ttutil.o : ttconf.h ttutil.h
 
@@ -124,8 +92,4 @@ tculog.o : ttconf.h ttutil.h tculog.h
 
 tcrdb.o : ttconf.h ttutil.h tcrdb.h
 
-ttskelproxy.o : ttconf.h ttutil.h tcrdb.h
-
-ttserver.o ttulmgr.o : ttconf.h ttutil.h tculog.h tcrdb.h
-
-ttserver.o : ttscrext.h
+ttserver.o tculmgr.o : ttconf.h ttutil.h tculog.h tcrdb.h

@@ -555,6 +555,7 @@ bool ttsockgets(TTSOCK *sock, char *buf, int size){
 char *ttsockgets2(TTSOCK *sock){
   assert(sock);
   bool err = false;
+  (void)(err);
   TCXSTR *xstr = tcxstrnew3(SOCKLINEBUFSIZ);
   pthread_cleanup_push((void (*)(void *))tcxstrdel, xstr);
   int size = 0;
