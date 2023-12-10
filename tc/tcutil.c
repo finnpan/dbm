@@ -16,7 +16,6 @@
 
 #include "tcutil.h"
 #include "tcconf.h"
-#include "tcmd5.h"
 
 
 
@@ -5314,23 +5313,6 @@ char *tcregexreplace(const char *str, const char *regex, const char *alt){
 }
 
 
-/* Get the MD5 hash value of a serial object. */
-void tcmd5hash(const void *ptr, int size, char *buf){
-  assert(ptr && size >= 0 && buf);
-  int i;
-  md5_state_t ms;
-  md5_init(&ms);
-  md5_append(&ms, (md5_byte_t *)ptr, size);
-  unsigned char digest[16];
-  md5_finish(&ms, (md5_byte_t *)digest);
-  char *wp = buf;
-  for(i = 0; i < 16; i++){
-    wp += sprintf(wp, "%02x", digest[i]);
-  }
-  *wp = '\0';
-}
-
-
 /* Cipher or decipher a serial object with the Arcfour stream cipher. */
 void tcarccipher(const void *ptr, int size, const void *kbuf, int ksiz, void *obuf){
   assert(ptr && size >= 0 && kbuf && ksiz >= 0 && obuf);
@@ -9245,9 +9227,7 @@ static int tctmpldumpeval(TCXSTR *xstr, const char *expr, const TCLIST *elems, i
           tcxstrcat2(xstr, ebuf);
           TCFREE(ebuf);
         } else if(!strcmp(enc, "MD5")){
-          char ebuf[48];
-          tcmd5hash(vbuf, vsiz, ebuf);
-          tcxstrcat2(xstr, ebuf);
+          assert(0);
         } else {
           tcxstrcat2(xstr, vbuf);
         }

@@ -1,5 +1,5 @@
 LIBRARYFILES = libtc.a libtc.so tcddb.so
-LIBOBJFILES = tcutil.o tchdb.o tcbdb.o tcfdb.o tctdb.o tcadb.o tcconf.o tcmd5.o
+LIBOBJFILES = tcutil.o tchdb.o tcbdb.o tcadb.o tcconf.o
 
 CC = gcc
 CPPFLAGS = -I. -DNDEBUG -D_GNU_SOURCE=1 -D_REENTRANT -D__EXTENSIONS__
@@ -23,7 +23,7 @@ all : $(LIBRARYFILES)
 
 
 clean :
-	rm -rf $(LIBRARYFILES) $(LIBOBJFILES)
+	rm -rf $(LIBRARYFILES) $(LIBOBJFILES) tcddb.o
 
 
 .PHONY : all clean
@@ -41,18 +41,12 @@ tcddb.so : tcddb.o
 	$(CC) $(CFLAGS) -shared -o $@ $< $(LDFLAGS) $(LIBS)
 
 
-tcmd5.o : tcmd5.h
-
 tcconf.o : tcconf.h
 
-tcutil.o : tcconf.h tcutil.h tcmd5.h
+tcutil.o : tcconf.h tcutil.h
 
 tchdb.o : tcconf.h tcutil.h tchdb.h
 
 tcbdb.o : tcconf.h tcutil.h tchdb.h tcbdb.h
 
-tcfdb.o : tcconf.h tcutil.h tcfdb.h
-
-tctdb.o : tcconf.h tcutil.h tchdb.h tctdb.h
-
-tcadb.o : tcconf.h tcutil.h tchdb.h tcbdb.h tcfdb.h tctdb.h tcadb.h
+tcadb.o : tcconf.h tcutil.h tchdb.h tcbdb.h tcadb.h

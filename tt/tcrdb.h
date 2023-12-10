@@ -531,64 +531,11 @@ char *tcrdbstat(TCRDB *rdb);
 TCLIST *tcrdbmisc(TCRDB *rdb, const char *name, int opts, const TCLIST *args);
 
 
-
-/*************************************************************************************************
- * table extension
- *************************************************************************************************/
-
-
-enum {                                   /* enumeration for index types */
-  RDBITLEXICAL = TDBITLEXICAL,           /* lexical string */
-  RDBITDECIMAL = TDBITDECIMAL,           /* decimal string */
-  RDBITTOKEN = TDBITTOKEN,               /* token inverted index */
-  RDBITQGRAM = TDBITQGRAM,               /* q-gram inverted index */
-  RDBITOPT = TDBITOPT,                   /* optimize */
-  RDBITVOID = TDBITVOID,                 /* void */
-  RDBITKEEP = TDBITKEEP                  /* keep existing index */
-};
-
 typedef struct {                         /* type of structure for a query */
   TCRDB *rdb;                            /* database object */
   TCLIST *args;                          /* arguments for the method */
   TCXSTR *hint;                          /* hint string */
 } RDBQRY;
-
-enum {                                   /* enumeration for query conditions */
-  RDBQCSTREQ = TDBQCSTREQ,               /* string is equal to */
-  RDBQCSTRINC = TDBQCSTRINC,             /* string is included in */
-  RDBQCSTRBW = TDBQCSTRBW,               /* string begins with */
-  RDBQCSTREW = TDBQCSTREW,               /* string ends with */
-  RDBQCSTRAND = TDBQCSTRAND,             /* string includes all tokens in */
-  RDBQCSTROR = TDBQCSTROR,               /* string includes at least one token in */
-  RDBQCSTROREQ = TDBQCSTROREQ,           /* string is equal to at least one token in */
-  RDBQCSTRRX = TDBQCSTRRX,               /* string matches regular expressions of */
-  RDBQCNUMEQ = TDBQCNUMEQ,               /* number is equal to */
-  RDBQCNUMGT = TDBQCNUMGT,               /* number is greater than */
-  RDBQCNUMGE = TDBQCNUMGE,               /* number is greater than or equal to */
-  RDBQCNUMLT = TDBQCNUMLT,               /* number is less than */
-  RDBQCNUMLE = TDBQCNUMLE,               /* number is less than or equal to */
-  RDBQCNUMBT = TDBQCNUMBT,               /* number is between two tokens of */
-  RDBQCNUMOREQ = TDBQCNUMOREQ,           /* number is equal to at least one token in */
-  RDBQCFTSPH = TDBQCFTSPH,               /* full-text search with the phrase of */
-  RDBQCFTSAND = TDBQCFTSAND,             /* full-text search with all tokens in */
-  RDBQCFTSOR = TDBQCFTSOR,               /* full-text search with at least one token in */
-  RDBQCFTSEX = TDBQCFTSEX,               /* full-text search with the compound expression of */
-  RDBQCNEGATE = TDBQCNEGATE,             /* negation flag */
-  RDBQCNOIDX = TDBQCNOIDX                /* no index flag */
-};
-
-enum {                                   /* enumeration for order types */
-  RDBQOSTRASC = TDBQOSTRASC,             /* string ascending */
-  RDBQOSTRDESC = TDBQOSTRDESC,           /* string descending */
-  RDBQONUMASC = TDBQONUMASC,             /* number ascending */
-  RDBQONUMDESC = TDBQONUMDESC            /* number descending */
-};
-
-enum {                                   /* enumeration for set operation types */
-  RDBMSUNION = TDBMSUNION,               /* union */
-  RDBMSISECT = TDBMSISECT,               /* intersection */
-  RDBMSDIFF = TDBMSDIFF                  /* difference */
-};
 
 
 /* Store a record into a remote database object.
@@ -768,17 +715,6 @@ const char *tcrdbqryhint(RDBQRY *qry);
    Because the object of the return value is created with the function `tclistnew', it should be
    deleted with the function `tclistdel' when it is no longer in use. */
 TCLIST *tcrdbmetasearch(RDBQRY **qrys, int num, int type);
-
-
-/* Search for multiple servers in parallel.
-   `qrys' specifies an array of the query objects.
-   `num' specifies the number of elements of the array.
-   The return value is a list object of zero separated columns of the corresponding records.
-   This function does never fail.  It returns an empty list even if no record corresponds.
-   Each element of the list can be treated with the function `tcrdbqryrescols'.  Because the
-   object of the return value is created with the function `tclistnew', it should be deleted with
-   the function `tclistdel' when it is no longer in use. */
-TCLIST *tcrdbparasearch(RDBQRY **qrys, int num);
 
 
 

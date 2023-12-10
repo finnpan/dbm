@@ -2507,14 +2507,6 @@ bool tcregexmatch(const char *str, const char *regex);
 char *tcregexreplace(const char *str, const char *regex, const char *alt);
 
 
-/* Get the MD5 hash value of a serial object.
-   `ptr' specifies the pointer to the region.
-   `size' specifies the size of the region.
-   `buf' specifies the pointer to the region into which the result string is written.  The size
-   of the buffer should be equal to or more than 48 bytes. */
-void tcmd5hash(const void *ptr, int size, char *buf);
-
-
 /* Cipher or decipher a serial object with the Arcfour stream cipher.
    `ptr' specifies the pointer to the region.
    `size' specifies the size of the region.
@@ -4171,9 +4163,6 @@ typedef union { int32_t i; int64_t l; double d; void *p; TCCMP f; } tcgeneric_t;
 #define tcbdbcmpdecimal   tccmpdecimal
 #define tcbdbcmpint32     tccmpint32
 #define tcbdbcmpint64     tccmpint64
-#define tctdbqryprocout   tctdbqrysearchout
-#define tctdbqrysetmax(TC_tdb, TC_max) \
-  tctdbqrysetlimit((TC_tdb), (TC_max), 0)
 
 
 

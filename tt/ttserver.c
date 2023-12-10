@@ -2126,8 +2126,6 @@ static void do_stat(TTSOCK *sock, TASKARG *arg, TTREQ *req){
       case ADBONDB: wp += sprintf(wp, "type\ton-memory tree\n"); break;
       case ADBOHDB: wp += sprintf(wp, "type\thash\n"); break;
       case ADBOBDB: wp += sprintf(wp, "type\tB+ tree\n"); break;
-      case ADBOFDB: wp += sprintf(wp, "type\tfixed-length\n"); break;
-      case ADBOTDB: wp += sprintf(wp, "type\ttable\n"); break;
       case ADBOSKEL: wp += sprintf(wp, "type\tskeleton\n"); break;
     }
     const char *path = tcadbpath(adb);
@@ -3511,8 +3509,6 @@ static void do_http_options(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, con
       case ADBONDB: tcxstrprintf(xstr, "X-TT-TYPE: on-memory tree\r\n"); break;
       case ADBOHDB: tcxstrprintf(xstr, "X-TT-TYPE: hash\r\n"); break;
       case ADBOBDB: tcxstrprintf(xstr, "X-TT-TYPE: B+ tree\r\n"); break;
-      case ADBOFDB: tcxstrprintf(xstr, "X-TT-TYPE: fixed-length\r\n"); break;
-      case ADBOTDB: tcxstrprintf(xstr, "X-TT-TYPE: table\r\n"); break;
       case ADBOSKEL: tcxstrprintf(xstr, "X-TT-TYPE: skeleton\r\n"); break;
     }
     const char *path = tcadbpath(adb);

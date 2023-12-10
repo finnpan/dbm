@@ -17,8 +17,6 @@
 #include "tcutil.h"
 #include "tchdb.h"
 #include "tcbdb.h"
-#include "tcfdb.h"
-#include "tctdb.h"
 #include "tcadb.h"
 #include "tcconf.h"
 
@@ -80,7 +78,6 @@ static int tcadbmapreccmplexical(const TCLISTDATUM *a, const TCLISTDATUM *b);
 static int tcadbmapreccmpdecimal(const TCLISTDATUM *a, const TCLISTDATUM *b);
 static int tcadbmapreccmpint32(const TCLISTDATUM *a, const TCLISTDATUM *b);
 static int tcadbmapreccmpint64(const TCLISTDATUM *a, const TCLISTDATUM *b);
-static int tcadbtdbqrygetout(const void *pkbuf, int pksiz, TCMAP *cols, void *op);
 
 
 
@@ -98,8 +95,6 @@ TCADB *tcadbnew(void){
   adb->ndb = NULL;
   adb->hdb = NULL;
   adb->bdb = NULL;
-  adb->fdb = NULL;
-  adb->tdb = NULL;
   adb->capnum = -1;
   adb->capsiz = -1;
   adb->capcnt = 0;
@@ -201,8 +196,10 @@ bool tcadbopen(TCADB *adb, const char *name){
     } else if(!tcstricmp(elem, "ncnum")){
       ncnum = tcatoix(pv);
     } else if(!tcstricmp(elem, "width")){
+      (void)width;
       width = tcatoix(pv);
     } else if(!tcstricmp(elem, "limsiz")){
+      (void)limsiz;
       limsiz = tcatoix(pv);
     } else if(!tcstricmp(elem, "idx")){
       if(!idxs) idxs = tclistnew();
@@ -285,63 +282,6 @@ bool tcadbopen(TCADB *adb, const char *name){
     adb->bdb = bdb;
     adb->cur = tcbdbcurnew(bdb);
     adb->omode = ADBOBDB;
-  } else if(tcstribwm(path, ".tcf") || tcstribwm(path, ".fdb")){
-    TCFDB *fdb = tcfdbnew();
-    if(dbgfd >= 0) tcfdbsetdbgfd(fdb, dbgfd);
-    tcfdbsetmutex(fdb);
-    tcfdbtune(fdb, width, limsiz);
-    int omode = owmode ? FDBOWRITER : FDBOREADER;
-    if(ocmode) omode |= FDBOCREAT;
-    if(otmode) omode |= FDBOTRUNC;
-    if(onlmode) omode |= FDBONOLCK;
-    if(onbmode) omode |= FDBOLCKNB;
-    if(!tcfdbopen(fdb, path, omode)){
-      tcfdbdel(fdb);
-      if(idxs) tclistdel(idxs);
-      TCFREE(path);
-      return false;
-    }
-    adb->fdb = fdb;
-    adb->omode = ADBOFDB;
-  } else if(tcstribwm(path, ".tct") || tcstribwm(path, ".tdb")){
-    TCTDB *tdb = tctdbnew();
-    if(dbgfd >= 0) tctdbsetdbgfd(tdb, dbgfd);
-    tctdbsetmutex(tdb);
-    int opts = 0;
-    if(tlmode) opts |= TDBTLARGE;
-    if(tdmode) opts |= TDBTDEFLATE;
-    if(tbmode) opts |= TDBTBZIP;
-    if(ttmode) opts |= TDBTTCBS;
-    tctdbtune(tdb, bnum, apow, fpow, opts);
-    tctdbsetcache(tdb, rcnum, lcnum, ncnum);
-    if(xmsiz >= 0) tctdbsetxmsiz(tdb, xmsiz);
-    if(dfunit >= 0) tctdbsetdfunit(tdb, dfunit);
-    int omode = owmode ? TDBOWRITER : TDBOREADER;
-    if(ocmode) omode |= TDBOCREAT;
-    if(otmode) omode |= TDBOTRUNC;
-    if(onlmode) omode |= TDBONOLCK;
-    if(onbmode) omode |= TDBOLCKNB;
-    if(!tctdbopen(tdb, path, omode)){
-      tctdbdel(tdb);
-      if(idxs) tclistdel(idxs);
-      TCFREE(path);
-      return false;
-    }
-    if(idxs){
-      int xnum = TCLISTNUM(idxs);
-      for(int i = 0; i < xnum; i++){
-        const char *expr = TCLISTVALPTR(idxs, i);
-        int type = TDBITLEXICAL;
-        char *pv = strchr(expr, ':');
-        if(pv){
-          *(pv++) = '\0';
-          type = tctdbstrtoindextype(pv);
-        }
-        if(type >= 0) tctdbsetindex(tdb, expr, type | TDBITKEEP);
-      }
-    }
-    adb->tdb = tdb;
-    adb->omode = ADBOTDB;
   }
   if(idxs) tclistdel(idxs);
   TCFREE(path);
@@ -375,16 +315,6 @@ bool tcadbclose(TCADB *adb){
       tcbdbdel(adb->bdb);
       adb->bdb = NULL;
       break;
-    case ADBOFDB:
-      if(!tcfdbclose(adb->fdb)) err = true;
-      tcfdbdel(adb->fdb);
-      adb->fdb = NULL;
-      break;
-    case ADBOTDB:
-      if(!tctdbclose(adb->tdb)) err = true;
-      tctdbdel(adb->tdb);
-      adb->tdb = NULL;
-      break;
     case ADBOSKEL:
       skel = adb->skel;
       if(skel->close){
@@ -406,7 +336,6 @@ bool tcadbclose(TCADB *adb){
 bool tcadbput(TCADB *adb, const void *kbuf, int ksiz, const void *vbuf, int vsiz){
   assert(adb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0);
   bool err = false;
-  char numbuf[TCNUMBUFSIZ];
   ADBSKEL *skel;
   switch(adb->omode){
     case ADBOMDB:
@@ -441,16 +370,6 @@ bool tcadbput(TCADB *adb, const void *kbuf, int ksiz, const void *vbuf, int vsiz
     case ADBOBDB:
       if(!tcbdbput(adb->bdb, kbuf, ksiz, vbuf, vsiz)) err = true;
       break;
-    case ADBOFDB:
-      if(!tcfdbput2(adb->fdb, kbuf, ksiz, vbuf, vsiz)) err = true;
-      break;
-    case ADBOTDB:
-      if(ksiz < 1){
-        ksiz = sprintf(numbuf, "%lld", (long long)tctdbgenuid(adb->tdb));
-        kbuf = numbuf;
-      }
-      if(!tctdbput2(adb->tdb, kbuf, ksiz, vbuf, vsiz)) err = true;
-      break;
     case ADBOSKEL:
       skel = adb->skel;
       if(skel->put){
@@ -478,7 +397,6 @@ bool tcadbput2(TCADB *adb, const char *kstr, const char *vstr){
 bool tcadbputkeep(TCADB *adb, const void *kbuf, int ksiz, const void *vbuf, int vsiz){
   assert(adb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0);
   bool err = false;
-  char numbuf[TCNUMBUFSIZ];
   ADBSKEL *skel;
   switch(adb->omode){
     case ADBOMDB:
@@ -517,16 +435,6 @@ bool tcadbputkeep(TCADB *adb, const void *kbuf, int ksiz, const void *vbuf, int 
     case ADBOBDB:
       if(!tcbdbputkeep(adb->bdb, kbuf, ksiz, vbuf, vsiz)) err = true;
       break;
-    case ADBOFDB:
-      if(!tcfdbputkeep2(adb->fdb, kbuf, ksiz, vbuf, vsiz)) err = true;
-      break;
-    case ADBOTDB:
-      if(ksiz < 1){
-        ksiz = sprintf(numbuf, "%lld", (long long)tctdbgenuid(adb->tdb));
-        kbuf = numbuf;
-      }
-      if(!tctdbputkeep2(adb->tdb, kbuf, ksiz, vbuf, vsiz)) err = true;
-      break;
     case ADBOSKEL:
       skel = adb->skel;
       if(skel->putkeep){
@@ -554,7 +462,6 @@ bool tcadbputkeep2(TCADB *adb, const char *kstr, const char *vstr){
 bool tcadbputcat(TCADB *adb, const void *kbuf, int ksiz, const void *vbuf, int vsiz){
   assert(adb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0);
   bool err = false;
-  char numbuf[TCNUMBUFSIZ];
   ADBSKEL *skel;
   switch(adb->omode){
     case ADBOMDB:
@@ -588,16 +495,6 @@ bool tcadbputcat(TCADB *adb, const void *kbuf, int ksiz, const void *vbuf, int v
       break;
     case ADBOBDB:
       if(!tcbdbputcat(adb->bdb, kbuf, ksiz, vbuf, vsiz)) err = true;
-      break;
-    case ADBOFDB:
-      if(!tcfdbputcat2(adb->fdb, kbuf, ksiz, vbuf, vsiz)) err = true;
-      break;
-    case ADBOTDB:
-      if(ksiz < 1){
-        ksiz = sprintf(numbuf, "%lld", (long long)tctdbgenuid(adb->tdb));
-        kbuf = numbuf;
-      }
-      if(!tctdbputcat2(adb->tdb, kbuf, ksiz, vbuf, vsiz)) err = true;
       break;
     case ADBOSKEL:
       skel = adb->skel;
@@ -640,12 +537,6 @@ bool tcadbout(TCADB *adb, const void *kbuf, int ksiz){
     case ADBOBDB:
       if(!tcbdbout(adb->bdb, kbuf, ksiz)) err = true;
       break;
-    case ADBOFDB:
-      if(!tcfdbout2(adb->fdb, kbuf, ksiz)) err = true;
-      break;
-    case ADBOTDB:
-      if(!tctdbout(adb->tdb, kbuf, ksiz)) err = true;
-      break;
     case ADBOSKEL:
       skel = adb->skel;
       if(skel->out){
@@ -686,12 +577,6 @@ void *tcadbget(TCADB *adb, const void *kbuf, int ksiz, int *sp){
       break;
     case ADBOBDB:
       rv = tcbdbget(adb->bdb, kbuf, ksiz, sp);
-      break;
-    case ADBOFDB:
-      rv = tcfdbget2(adb->fdb, kbuf, ksiz, sp);
-      break;
-    case ADBOTDB:
-      rv = tctdbget2(adb->tdb, kbuf, ksiz, sp);
       break;
     case ADBOSKEL:
       skel = adb->skel;
@@ -734,12 +619,6 @@ int tcadbvsiz(TCADB *adb, const void *kbuf, int ksiz){
       break;
     case ADBOBDB:
       rv = tcbdbvsiz(adb->bdb, kbuf, ksiz);
-      break;
-    case ADBOFDB:
-      rv = tcfdbvsiz2(adb->fdb, kbuf, ksiz);
-      break;
-    case ADBOTDB:
-      rv = tctdbvsiz(adb->tdb, kbuf, ksiz);
       break;
     case ADBOSKEL:
       skel = adb->skel;
@@ -786,12 +665,6 @@ bool tcadbiterinit(TCADB *adb){
           err = true;
       }
       break;
-    case ADBOFDB:
-      if(!tcfdbiterinit(adb->fdb)) err = true;
-      break;
-    case ADBOTDB:
-      if(!tctdbiterinit(adb->tdb)) err = true;
-      break;
     case ADBOSKEL:
       skel = adb->skel;
       if(skel->iterinit){
@@ -826,12 +699,6 @@ void *tcadbiternext(TCADB *adb, int *sp){
     case ADBOBDB:
       rv = tcbdbcurkey(adb->cur, sp);
       tcbdbcurnext(adb->cur);
-      break;
-    case ADBOFDB:
-      rv = tcfdbiternext2(adb->fdb, sp);
-      break;
-    case ADBOTDB:
-      rv = tctdbiternext(adb->tdb, sp);
       break;
     case ADBOSKEL:
       skel = adb->skel;
@@ -875,12 +742,6 @@ TCLIST *tcadbfwmkeys(TCADB *adb, const void *pbuf, int psiz, int max){
     case ADBOBDB:
       rv = tcbdbfwmkeys(adb->bdb, pbuf, psiz, max);
       break;
-    case ADBOFDB:
-      rv = tcfdbrange4(adb->fdb, pbuf, psiz, max);
-      break;
-    case ADBOTDB:
-      rv = tctdbfwmkeys(adb->tdb, pbuf, psiz, max);
-      break;
     case ADBOSKEL:
       skel = adb->skel;
       if(skel->fwmkeys){
@@ -908,7 +769,6 @@ TCLIST *tcadbfwmkeys2(TCADB *adb, const char *pstr, int max){
 int tcadbaddint(TCADB *adb, const void *kbuf, int ksiz, int num){
   assert(adb && kbuf && ksiz >= 0);
   int rv;
-  char numbuf[TCNUMBUFSIZ];
   ADBSKEL *skel;
   switch(adb->omode){
     case ADBOMDB:
@@ -941,16 +801,6 @@ int tcadbaddint(TCADB *adb, const void *kbuf, int ksiz, int num){
     case ADBOBDB:
       rv = tcbdbaddint(adb->bdb, kbuf, ksiz, num);
       break;
-    case ADBOFDB:
-      rv = tcfdbaddint(adb->fdb, tcfdbkeytoid(kbuf, ksiz), num);
-      break;
-    case ADBOTDB:
-      if(ksiz < 1){
-        ksiz = sprintf(numbuf, "%lld", (long long)tctdbgenuid(adb->tdb));
-        kbuf = numbuf;
-      }
-      rv = tctdbaddint(adb->tdb, kbuf, ksiz, num);
-      break;
     case ADBOSKEL:
       skel = adb->skel;
       if(skel->addint){
@@ -971,7 +821,6 @@ int tcadbaddint(TCADB *adb, const void *kbuf, int ksiz, int num){
 double tcadbadddouble(TCADB *adb, const void *kbuf, int ksiz, double num){
   assert(adb && kbuf && ksiz >= 0);
   double rv;
-  char numbuf[TCNUMBUFSIZ];
   ADBSKEL *skel;
   switch(adb->omode){
     case ADBOMDB:
@@ -1003,16 +852,6 @@ double tcadbadddouble(TCADB *adb, const void *kbuf, int ksiz, double num){
       break;
     case ADBOBDB:
       rv = tcbdbadddouble(adb->bdb, kbuf, ksiz, num);
-      break;
-    case ADBOFDB:
-      rv = tcfdbadddouble(adb->fdb, tcfdbkeytoid(kbuf, ksiz), num);
-      break;
-    case ADBOTDB:
-      if(ksiz < 1){
-        ksiz = sprintf(numbuf, "%lld", (long long)tctdbgenuid(adb->tdb));
-        kbuf = numbuf;
-      }
-      rv = tctdbadddouble(adb->tdb, kbuf, ksiz, num);
       break;
     case ADBOSKEL:
       skel = adb->skel;
@@ -1064,12 +903,6 @@ bool tcadbsync(TCADB *adb){
       break;
     case ADBOBDB:
       if(!tcbdbsync(adb->bdb)) err = true;
-      break;
-    case ADBOFDB:
-      if(!tcfdbsync(adb->fdb)) err = true;
-      break;
-    case ADBOTDB:
-      if(!tctdbsync(adb->tdb)) err = true;
       break;
     case ADBOSKEL:
       skel = adb->skel;
@@ -1132,8 +965,10 @@ bool tcadboptimize(TCADB *adb, const char *params){
     } else if(!tcstricmp(elem, "nmemb")){
       nmemb = tcatoix(pv);
     } else if(!tcstricmp(elem, "width")){
+      (void)width;
       width = tcatoix(pv);
     } else if(!tcstricmp(elem, "limsiz")){
+      (void)limsiz;
       limsiz = tcatoix(pv);
     }
   }
@@ -1176,21 +1011,6 @@ bool tcadboptimize(TCADB *adb, const char *params){
       }
       if(!tcbdboptimize(adb->bdb, lmemb, nmemb, bnum, apow, fpow, opts)) err = true;
       break;
-    case ADBOFDB:
-      if(!tcfdboptimize(adb->fdb, width, limsiz)) err = true;
-      break;
-    case ADBOTDB:
-      opts = 0;
-      if(tdefault){
-        opts = UINT8_MAX;
-      } else {
-        if(tlmode) opts |= TDBTLARGE;
-        if(tdmode) opts |= TDBTDEFLATE;
-        if(tbmode) opts |= TDBTBZIP;
-        if(ttmode) opts |= TDBTTCBS;
-      }
-      if(!tctdboptimize(adb->tdb, bnum, apow, fpow, opts)) err = true;
-      break;
     case ADBOSKEL:
       skel = adb->skel;
       if(skel->optimize){
@@ -1224,12 +1044,6 @@ bool tcadbvanish(TCADB *adb){
       break;
     case ADBOBDB:
       if(!tcbdbvanish(adb->bdb)) err = true;
-      break;
-    case ADBOFDB:
-      if(!tcfdbvanish(adb->fdb)) err = true;
-      break;
-    case ADBOTDB:
-      if(!tctdbvanish(adb->tdb)) err = true;
       break;
     case ADBOSKEL:
       skel = adb->skel;
@@ -1290,12 +1104,6 @@ bool tcadbcopy(TCADB *adb, const char *path){
     case ADBOBDB:
       if(!tcbdbcopy(adb->bdb, path)) err = true;
       break;
-    case ADBOFDB:
-      if(!tcfdbcopy(adb->fdb, path)) err = true;
-      break;
-    case ADBOTDB:
-      if(!tctdbcopy(adb->tdb, path)) err = true;
-      break;
     case ADBOSKEL:
       skel = adb->skel;
       if(skel->copy){
@@ -1329,12 +1137,6 @@ bool tcadbtranbegin(TCADB *adb){
       break;
     case ADBOBDB:
       if(!tcbdbtranbegin(adb->bdb)) err = true;
-      break;
-    case ADBOFDB:
-      if(!tcfdbtranbegin(adb->fdb)) err = true;
-      break;
-    case ADBOTDB:
-      if(!tctdbtranbegin(adb->tdb)) err = true;
       break;
     case ADBOSKEL:
       skel = adb->skel;
@@ -1370,12 +1172,6 @@ bool tcadbtrancommit(TCADB *adb){
     case ADBOBDB:
       if(!tcbdbtrancommit(adb->bdb)) err = true;
       break;
-    case ADBOFDB:
-      if(!tcfdbtrancommit(adb->fdb)) err = true;
-      break;
-    case ADBOTDB:
-      if(!tctdbtrancommit(adb->tdb)) err = true;
-      break;
     case ADBOSKEL:
       skel = adb->skel;
       if(skel->trancommit){
@@ -1409,12 +1205,6 @@ bool tcadbtranabort(TCADB *adb){
       break;
     case ADBOBDB:
       if(!tcbdbtranabort(adb->bdb)) err = true;
-      break;
-    case ADBOFDB:
-      if(!tcfdbtranabort(adb->fdb)) err = true;
-      break;
-    case ADBOTDB:
-      if(!tctdbtranabort(adb->tdb)) err = true;
       break;
     case ADBOSKEL:
       skel = adb->skel;
@@ -1450,12 +1240,6 @@ const char *tcadbpath(TCADB *adb){
     case ADBOBDB:
       rv = tcbdbpath(adb->bdb);
       break;
-    case ADBOFDB:
-      rv = tcfdbpath(adb->fdb);
-      break;
-    case ADBOTDB:
-      rv = tctdbpath(adb->tdb);
-      break;
     case ADBOSKEL:
       skel = adb->skel;
       if(skel->path){
@@ -1490,12 +1274,6 @@ uint64_t tcadbrnum(TCADB *adb){
     case ADBOBDB:
       rv = tcbdbrnum(adb->bdb);
       break;
-    case ADBOFDB:
-      rv = tcfdbrnum(adb->fdb);
-      break;
-    case ADBOTDB:
-      rv = tctdbrnum(adb->tdb);
-      break;
     case ADBOSKEL:
       skel = adb->skel;
       if(skel->rnum){
@@ -1529,12 +1307,6 @@ uint64_t tcadbsize(TCADB *adb){
       break;
     case ADBOBDB:
       rv = tcbdbfsiz(adb->bdb);
-      break;
-    case ADBOFDB:
-      rv = tcfdbfsiz(adb->fdb);
-      break;
-    case ADBOTDB:
-      rv = tctdbfsiz(adb->tdb);
       break;
     case ADBOSKEL:
       skel = adb->skel;
@@ -2533,715 +2305,6 @@ TCLIST *tcadbmisc(TCADB *adb, const char *name, const TCLIST *args){
         rv = NULL;
       }
       break;
-    case ADBOFDB:
-      if(!strcmp(name, "put") || !strcmp(name, "putkeep") || !strcmp(name, "putcat")){
-        if(argc > 1){
-          rv = tclistnew2(1);
-          const char *kbuf, *vbuf;
-          int ksiz, vsiz;
-          TCLISTVAL(kbuf, args, 0, ksiz);
-          TCLISTVAL(vbuf, args, 1, vsiz);
-          bool err = false;
-          if(!strcmp(name, "put")){
-            if(!tcfdbput2(adb->fdb, kbuf, ksiz, vbuf, vsiz)) err = true;
-          } else if(!strcmp(name, "putkeep")){
-            if(!tcfdbputkeep2(adb->fdb, kbuf, ksiz, vbuf, vsiz)) err = true;
-          } else if(!strcmp(name, "putcat")){
-            if(!tcfdbputcat2(adb->fdb, kbuf, ksiz, vbuf, vsiz)) err = true;
-          }
-          if(err){
-            tclistdel(rv);
-            rv = NULL;
-          }
-        } else {
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "out")){
-        if(argc > 0){
-          rv = tclistnew2(1);
-          const char *kbuf;
-          int ksiz;
-          TCLISTVAL(kbuf, args, 0, ksiz);
-          if(!tcfdbout2(adb->fdb, kbuf, ksiz)){
-            tclistdel(rv);
-            rv = NULL;
-          }
-        } else {
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "get")){
-        if(argc > 0){
-          rv = tclistnew2(1);
-          const char *kbuf;
-          int ksiz;
-          TCLISTVAL(kbuf, args, 0, ksiz);
-          int vsiz;
-          char *vbuf = tcfdbget2(adb->fdb, kbuf, ksiz, &vsiz);
-          if(vbuf){
-            TCLISTPUSH(rv, vbuf, vsiz);
-            TCFREE(vbuf);
-          } else {
-            tclistdel(rv);
-            rv = NULL;
-          }
-        } else {
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "putlist")){
-        rv = tclistnew2(1);
-        bool err = false;
-        argc--;
-        for(int i = 0; i < argc; i += 2){
-          const char *kbuf, *vbuf;
-          int ksiz, vsiz;
-          TCLISTVAL(kbuf, args, i, ksiz);
-          TCLISTVAL(vbuf, args, i + 1, vsiz);
-          if(!tcfdbput2(adb->fdb, kbuf, ksiz, vbuf, vsiz)){
-            err = true;
-            break;
-          }
-        }
-        if(err){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "outlist")){
-        rv = tclistnew2(1);
-        bool err = false;
-        for(int i = 0; i < argc; i++){
-          const char *kbuf;
-          int ksiz;
-          TCLISTVAL(kbuf, args, i, ksiz);
-          if(!tcfdbout2(adb->fdb, kbuf, ksiz) && tcfdbecode(adb->fdb) != TCENOREC){
-            err = true;
-            break;
-          }
-        }
-        if(err){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "getlist")){
-        rv = tclistnew2(argc * 2);
-        bool err = false;
-        for(int i = 0; i < argc; i++){
-          const char *kbuf;
-          int ksiz;
-          TCLISTVAL(kbuf, args, i, ksiz);
-          int vsiz;
-          char *vbuf = tcfdbget2(adb->fdb, kbuf, ksiz, &vsiz);
-          if(vbuf){
-            TCLISTPUSH(rv, kbuf, ksiz);
-            TCLISTPUSH(rv, vbuf, vsiz);
-            TCFREE(vbuf);
-          } else if(tcfdbecode(adb->fdb) != TCENOREC){
-            err = true;
-          }
-        }
-        if(err){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "getpart")){
-        if(argc > 0){
-          const char *kbuf;
-          int ksiz;
-          TCLISTVAL(kbuf, args, 0, ksiz);
-          int off = argc > 1 ? tcatoi(TCLISTVALPTR(args, 1)) : 0;
-          if(off < 0) off = 0;
-          if(off > INT_MAX / 2 - 1) off = INT_MAX - 1;
-          int len = argc > 2 ? tcatoi(TCLISTVALPTR(args, 2)) : -1;
-          if(len < 0 || len > INT_MAX / 2) len = INT_MAX / 2;
-          int vsiz;
-          char *vbuf = tcfdbget2(adb->fdb, kbuf, ksiz, &vsiz);
-          if(vbuf){
-            if(off < vsiz){
-              rv = tclistnew2(1);
-              vsiz -= off;
-              if(vsiz > len) vsiz = len;
-              if(off > 0) memmove(vbuf, vbuf + off, vsiz);
-              tclistpushmalloc(rv, vbuf, vsiz);
-            } else {
-              rv = NULL;
-              TCFREE(vbuf);
-            }
-          } else {
-            rv = NULL;
-          }
-        } else {
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "iterinit")){
-        rv = tclistnew2(1);
-        bool err = false;
-        if(argc > 0){
-          const char *kbuf;
-          int ksiz;
-          TCLISTVAL(kbuf, args, 0, ksiz);
-          if(!tcfdbiterinit3(adb->fdb, kbuf, ksiz)) err = true;
-        } else {
-          if(!tcfdbiterinit(adb->fdb)) err = true;
-        }
-        if(err){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "iternext")){
-        rv = tclistnew2(1);
-        int ksiz;
-        char *kbuf = tcfdbiternext2(adb->fdb, &ksiz);
-        if(kbuf){
-          TCLISTPUSH(rv, kbuf, ksiz);
-          int vsiz;
-          char *vbuf = tcfdbget2(adb->fdb, kbuf, ksiz, &vsiz);
-          if(vbuf){
-            TCLISTPUSH(rv, vbuf, vsiz);
-            TCFREE(vbuf);
-          }
-          TCFREE(kbuf);
-        } else {
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "sync")){
-        rv = tclistnew2(1);
-        if(!tcadbsync(adb)){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "optimize")){
-        rv = tclistnew2(1);
-        const char *params = argc > 0 ? TCLISTVALPTR(args, 0) : NULL;
-        if(!tcadboptimize(adb, params)){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "vanish")){
-        rv = tclistnew2(1);
-        if(!tcadbvanish(adb)){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "error")){
-        rv = tclistnew2(1);
-        int ecode = tcfdbecode(adb->fdb);
-        tclistprintf(rv, "%d: %s", ecode, tcfdberrmsg(ecode));
-        uint8_t flags = tcfdbflags(adb->fdb);
-        if(flags & FDBFFATAL) tclistprintf(rv, "fatal");
-      } else if(!strcmp(name, "regex")){
-        if(argc > 0){
-          const char *regex = TCLISTVALPTR(args, 0);
-          int options = REG_EXTENDED | REG_NOSUB;
-          if(*regex == '*'){
-            options |= REG_ICASE;
-            regex++;
-          }
-          regex_t rbuf;
-          if(regcomp(&rbuf, regex, options) == 0){
-            rv = tclistnew();
-            int max = argc > 1 ? tcatoi(TCLISTVALPTR(args, 1)) : 0;
-            if(max < 1) max = INT_MAX;
-            tcfdbiterinit(adb->fdb);
-            char *kbuf;
-            int ksiz;
-            while(max > 0 && (kbuf = tcfdbiternext2(adb->fdb, &ksiz))){
-              if(regexec(&rbuf, kbuf, 0, NULL, 0) == 0){
-                int vsiz;
-                char *vbuf = tcfdbget2(adb->fdb, kbuf, ksiz, &vsiz);
-                if(vbuf){
-                  TCLISTPUSH(rv, kbuf, ksiz);
-                  TCLISTPUSH(rv, vbuf, vsiz);
-                  TCFREE(vbuf);
-                  max--;
-                }
-              }
-              TCFREE(kbuf);
-            }
-            regfree(&rbuf);
-          } else {
-            rv = NULL;
-          }
-        } else {
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "range")){
-        rv = tclistnew();
-        int bksiz = 0;
-        const char *bkbuf = NULL;
-        if(argc > 0) TCLISTVAL(bkbuf, args, 0, bksiz);
-        int max = argc > 1 ? tcatoi(TCLISTVALPTR(args, 1)) : 0;
-        if(max < 1) max = INT_MAX;
-        int eksiz = 0;
-        const char *ekbuf = NULL;
-        if(argc > 2) TCLISTVAL(ekbuf, args, 2, eksiz);
-        if(bkbuf){
-          tcfdbiterinit3(adb->fdb, bkbuf, bksiz);
-        } else {
-          tcfdbiterinit(adb->fdb);
-        }
-        int64_t eid = ekbuf ? tcfdbkeytoid(ekbuf, eksiz) : -1;
-        char *kbuf;
-        int ksiz;
-        while(max > 0 && (kbuf = tcfdbiternext2(adb->fdb, &ksiz)) != NULL){
-          if(eid > 0 && tcatoi(kbuf) >= eid){
-            TCFREE(kbuf);
-            break;
-          }
-          int vsiz;
-          char *vbuf = tcfdbget2(adb->fdb, kbuf, ksiz, &vsiz);
-          if(vbuf){
-            TCLISTPUSH(rv, kbuf, ksiz);
-            TCLISTPUSH(rv, vbuf, vsiz);
-            TCFREE(vbuf);
-            max--;
-          }
-          TCFREE(kbuf);
-        }
-      } else {
-        rv = NULL;
-      }
-      break;
-    case ADBOTDB:
-      if(!strcmp(name, "put") || !strcmp(name, "putkeep") || !strcmp(name, "putcat")){
-        if(argc > 0){
-          rv = tclistnew2(1);
-          char *pkbuf;
-          int pksiz;
-          TCLISTVAL(pkbuf, args, 0, pksiz);
-          argc--;
-          TCMAP *cols = tcmapnew2(argc);
-          for(int i = 1; i < argc; i += 2){
-            const char *kbuf, *vbuf;
-            int ksiz, vsiz;
-            TCLISTVAL(kbuf, args, i, ksiz);
-            TCLISTVAL(vbuf, args, i + 1, vsiz);
-            tcmapput(cols, kbuf, ksiz, vbuf, vsiz);
-          }
-          bool err = false;
-          if(!strcmp(name, "put")){
-            if(!tctdbput(adb->tdb, pkbuf, pksiz, cols)) err = true;
-          } else if(!strcmp(name, "putkeep")){
-            if(!tctdbputkeep(adb->tdb, pkbuf, pksiz, cols)) err = true;
-          } else if(!strcmp(name, "putcat")){
-            if(!tctdbputcat(adb->tdb, pkbuf, pksiz, cols)) err = true;
-          }
-          tcmapdel(cols);
-          if(err){
-            tclistdel(rv);
-            rv = NULL;
-          }
-        } else {
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "out")){
-        if(argc > 0){
-          rv = tclistnew2(1);
-          char *pkbuf;
-          int pksiz;
-          TCLISTVAL(pkbuf, args, 0, pksiz);
-          if(!tctdbout(adb->tdb, pkbuf, pksiz)){
-            tclistdel(rv);
-            rv = NULL;
-          }
-        } else {
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "get")){
-        if(argc > 0){
-          rv = tclistnew2(1);
-          char *pkbuf;
-          int pksiz;
-          TCLISTVAL(pkbuf, args, 0, pksiz);
-          TCMAP *cols = tctdbget(adb->tdb, pkbuf, pksiz);
-          if(cols){
-            tcmapiterinit(cols);
-            const char *kbuf;
-            int ksiz;
-            while((kbuf = tcmapiternext(cols, &ksiz)) != NULL){
-              int vsiz;
-              const char *vbuf = tcmapiterval(kbuf, &vsiz);
-              TCLISTPUSH(rv, kbuf, ksiz);
-              TCLISTPUSH(rv, vbuf, vsiz);
-            }
-            tcmapdel(cols);
-          } else {
-            tclistdel(rv);
-            rv = NULL;
-          }
-        } else {
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "putlist")){
-        rv = tclistnew2(1);
-        bool err = false;
-        argc--;
-        for(int i = 0; i < argc; i += 2){
-          const char *kbuf, *vbuf;
-          int ksiz, vsiz;
-          TCLISTVAL(kbuf, args, i, ksiz);
-          TCLISTVAL(vbuf, args, i + 1, vsiz);
-          if(!tctdbput2(adb->tdb, kbuf, ksiz, vbuf, vsiz)){
-            err = true;
-            break;
-          }
-        }
-        if(err){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "outlist")){
-        rv = tclistnew2(1);
-        bool err = false;
-        for(int i = 0; i < argc; i++){
-          const char *kbuf;
-          int ksiz;
-          TCLISTVAL(kbuf, args, i, ksiz);
-          if(!tctdbout(adb->tdb, kbuf, ksiz) && tctdbecode(adb->tdb) != TCENOREC){
-            err = true;
-            break;
-          }
-        }
-        if(err){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "getlist")){
-        rv = tclistnew2(argc * 2);
-        bool err = false;
-        for(int i = 0; i < argc; i++){
-          const char *kbuf;
-          int ksiz;
-          TCLISTVAL(kbuf, args, i, ksiz);
-          int vsiz;
-          char *vbuf = tctdbget2(adb->tdb, kbuf, ksiz, &vsiz);
-          if(vbuf){
-            TCLISTPUSH(rv, kbuf, ksiz);
-            TCLISTPUSH(rv, vbuf, vsiz);
-            TCFREE(vbuf);
-          } else if(tctdbecode(adb->tdb) != TCENOREC){
-            err = true;
-          }
-        }
-        if(err){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "getpart")){
-        if(argc > 0){
-          const char *kbuf;
-          int ksiz;
-          TCLISTVAL(kbuf, args, 0, ksiz);
-          int off = argc > 1 ? tcatoi(TCLISTVALPTR(args, 1)) : 0;
-          if(off < 0) off = 0;
-          if(off > INT_MAX / 2 - 1) off = INT_MAX - 1;
-          int len = argc > 2 ? tcatoi(TCLISTVALPTR(args, 2)) : -1;
-          if(len < 0 || len > INT_MAX / 2) len = INT_MAX / 2;
-          int vsiz;
-          char *vbuf = tctdbget2(adb->tdb, kbuf, ksiz, &vsiz);
-          if(vbuf){
-            if(off < vsiz){
-              rv = tclistnew2(1);
-              vsiz -= off;
-              if(vsiz > len) vsiz = len;
-              if(off > 0) memmove(vbuf, vbuf + off, vsiz);
-              tclistpushmalloc(rv, vbuf, vsiz);
-            } else {
-              rv = NULL;
-              TCFREE(vbuf);
-            }
-          } else {
-            rv = NULL;
-          }
-        } else {
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "iterinit")){
-        rv = tclistnew2(1);
-        bool err = false;
-        if(argc > 0){
-          const char *pkbuf;
-          int pksiz;
-          TCLISTVAL(pkbuf, args, 0, pksiz);
-          if(!tctdbiterinit2(adb->tdb, pkbuf, pksiz)) err = true;
-        } else {
-          if(!tctdbiterinit(adb->tdb)) err = true;
-        }
-        if(err){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "iternext")){
-        rv = tclistnew2(1);
-        int pksiz;
-        char *pkbuf = tctdbiternext(adb->tdb, &pksiz);
-        if(pkbuf){
-          TCLISTPUSH(rv, pkbuf, pksiz);
-          int csiz;
-          char *cbuf = tctdbget2(adb->tdb, pkbuf, pksiz, &csiz);
-          if(cbuf){
-            TCLISTPUSH(rv, cbuf, csiz);
-            TCFREE(cbuf);
-          }
-          TCFREE(pkbuf);
-        } else {
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "sync")){
-        rv = tclistnew2(1);
-        if(!tcadbsync(adb)){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "optimize")){
-        rv = tclistnew2(1);
-        const char *params = argc > 0 ? TCLISTVALPTR(args, 0) : NULL;
-        if(!tcadboptimize(adb, params)){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "vanish")){
-        rv = tclistnew2(1);
-        if(!tcadbvanish(adb)){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "error")){
-        rv = tclistnew2(1);
-        int ecode = tctdbecode(adb->tdb);
-        tclistprintf(rv, "%d: %s", ecode, tctdberrmsg(ecode));
-        uint8_t flags = tctdbflags(adb->tdb);
-        if(flags & TDBFFATAL) tclistprintf(rv, "fatal");
-      } else if(!strcmp(name, "defrag")){
-        rv = tclistnew2(1);
-        int64_t step = argc > 0 ? tcatoi(TCLISTVALPTR(args, 0)) : -1;
-        if(!tctdbdefrag(adb->tdb, step)){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "cacheclear")){
-        rv = tclistnew2(1);
-        if(!tctdbcacheclear(adb->tdb)){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "regex")){
-        if(argc > 0){
-          const char *regex = TCLISTVALPTR(args, 0);
-          int options = REG_EXTENDED | REG_NOSUB;
-          if(*regex == '*'){
-            options |= REG_ICASE;
-            regex++;
-          }
-          regex_t rbuf;
-          if(regcomp(&rbuf, regex, options) == 0){
-            rv = tclistnew();
-            int max = argc > 1 ? tcatoi(TCLISTVALPTR(args, 1)) : 0;
-            if(max < 1) max = INT_MAX;
-            tctdbiterinit(adb->tdb);
-            char *kbuf;
-            int ksiz;
-            while(max > 0 && (kbuf = tctdbiternext(adb->tdb, &ksiz))){
-              if(regexec(&rbuf, kbuf, 0, NULL, 0) == 0){
-                int vsiz;
-                char *vbuf = tctdbget2(adb->tdb, kbuf, ksiz, &vsiz);
-                if(vbuf){
-                  TCLISTPUSH(rv, kbuf, ksiz);
-                  TCLISTPUSH(rv, vbuf, vsiz);
-                  TCFREE(vbuf);
-                  max--;
-                }
-              }
-              TCFREE(kbuf);
-            }
-            regfree(&rbuf);
-          } else {
-            rv = NULL;
-          }
-        } else {
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "setindex")){
-        rv = tclistnew2(1);
-        bool err = false;
-        argc--;
-        for(int i = 0; i < argc; i += 2){
-          const char *kbuf, *vbuf;
-          kbuf = TCLISTVALPTR(args, i);
-          vbuf = TCLISTVALPTR(args, i + 1);
-          int type = tctdbstrtoindextype(vbuf);
-          if(type >= 0){
-            if(!tctdbsetindex(adb->tdb, kbuf, type)) err = true;
-          } else {
-            err = true;
-          }
-        }
-        if(err){
-          tclistdel(rv);
-          rv = NULL;
-        }
-      } else if(!strcmp(name, "search") || !strcmp(name, "metasearch")){
-        bool toout = false;
-        bool tocnt = false;
-        bool tohint = false;
-        TDBQRY *qry = tctdbqrynew(adb->tdb);
-        TDBQRY **qrys = NULL;
-        int qnum = 0;
-        int mstype = TDBMSUNION;
-        TCLIST *cnames = NULL;
-        for(int i = 0; i < argc; i++){
-          const char *arg;
-          int asiz;
-          TCLISTVAL(arg, args, i, asiz);
-          TCLIST *tokens = tcstrsplit2(arg, asiz);
-          int tnum = TCLISTNUM(tokens);
-          if(tnum > 0){
-            const char *cmd = TCLISTVALPTR(tokens, 0);
-            if((!strcmp(cmd, "addcond") || !strcmp(cmd, "cond")) && tnum > 3){
-              const char *name = TCLISTVALPTR(tokens, 1);
-              const char *opstr = TCLISTVALPTR(tokens, 2);
-              const char *expr = TCLISTVALPTR(tokens, 3);
-              int op = tctdbqrystrtocondop(opstr);
-              if(op >= 0) tctdbqryaddcond(qry, name, op, expr);
-            } else if((!strcmp(cmd, "setorder") || !strcmp(cmd, "order")) && tnum > 2){
-              const char *name = TCLISTVALPTR(tokens, 1);
-              const char *typestr = TCLISTVALPTR(tokens, 2);
-              int type = tctdbqrystrtoordertype(typestr);
-              if(type >= 0) tctdbqrysetorder(qry, name, type);
-            } else if((!strcmp(cmd, "setlimit") || !strcmp(cmd, "limit") ||
-                       !strcmp(cmd, "setmax") || !strcmp(cmd, "max") ) && tnum > 1){
-              const char *maxstr = TCLISTVALPTR(tokens, 1);
-              int max = tcatoi(maxstr);
-              int skip = 0;
-              if(tnum > 2){
-                maxstr = TCLISTVALPTR(tokens, 2);
-                skip = tcatoi(maxstr);
-              }
-              tctdbqrysetlimit(qry, max, skip);
-            } else if(!strcmp(cmd, "get") || !strcmp(cmd, "columns")){
-              if(!cnames) cnames = tclistnew();
-              for(int j = 1; j < tnum; j++){
-                const char *token;
-                int tsiz;
-                TCLISTVAL(token, tokens, j, tsiz);
-                TCLISTPUSH(cnames, token, tsiz);
-              }
-            } else if(!strcmp(cmd, "next")){
-              if(qrys){
-                TCREALLOC(qrys, qrys, sizeof(*qrys) * (qnum + 1));
-              } else {
-                TCMALLOC(qrys, sizeof(*qrys) * 2);
-                qrys[0] = qry;
-                qnum = 1;
-              }
-              qry = tctdbqrynew(adb->tdb);
-              qrys[qnum++] = qry;
-            } else if(!strcmp(cmd, "mstype") && tnum > 1){
-              const char *typestr = TCLISTVALPTR(tokens, 1);
-              mstype = tctdbstrtometasearcytype(typestr);
-              if(mstype < 0) mstype = TDBMSUNION;
-            } else if(!strcmp(cmd, "out") || !strcmp(cmd, "remove")){
-              toout = true;
-            } else if(!strcmp(cmd, "count")){
-              tocnt = true;
-            } else if(!strcmp(cmd, "hint")){
-              tohint = true;
-            }
-          }
-          tclistdel(tokens);
-        }
-        if(toout){
-          if(cnames){
-            rv = tclistnew2(1);
-            void *opq[2];
-            opq[0] = rv;
-            opq[1] = cnames;
-            if(!tctdbqryproc2(qry, tcadbtdbqrygetout, opq)){
-              tclistdel(rv);
-              rv = NULL;
-            }
-          } else {
-            if(tctdbqrysearchout2(qry)){
-              rv = tclistnew2(1);
-            } else {
-              rv = NULL;
-            }
-          }
-        } else {
-          if(qrys){
-            rv = tctdbmetasearch(qrys, qnum, mstype);
-          } else {
-            rv = tctdbqrysearch(qry);
-          }
-          if(cnames){
-            int cnnum = TCLISTNUM(cnames);
-            int rnum = TCLISTNUM(rv);
-            TCLIST *nrv = tclistnew2(rnum);
-            for(int i = 0; i < rnum; i++){
-              const char *pkbuf;
-              int pksiz;
-              TCLISTVAL(pkbuf, rv, i, pksiz);
-              TCMAP *cols = tctdbget(adb->tdb, pkbuf, pksiz);
-              if(cols){
-                tcmapput(cols, "", 0, pkbuf, pksiz);
-                tcmapmove(cols, "", 0, true);
-                if(cnnum > 0){
-                  TCMAP *ncols = tcmapnew2(cnnum + 1);
-                  for(int j = 0; j < cnnum; j++){
-                    const char *cname;
-                    int cnsiz;
-                    TCLISTVAL(cname, cnames, j, cnsiz);
-                    int cvsiz;
-                    const char *cvalue = tcmapget(cols, cname, cnsiz, &cvsiz);
-                    if(cvalue) tcmapput(ncols, cname, cnsiz, cvalue, cvsiz);
-                  }
-                  tcmapdel(cols);
-                  cols = ncols;
-                }
-                int csiz;
-                char *cbuf = tcstrjoin4(cols, &csiz);
-                tclistpushmalloc(nrv, cbuf, csiz);
-                tcmapdel(cols);
-              }
-            }
-            tclistdel(rv);
-            rv = nrv;
-          }
-        }
-        if(tocnt && rv){
-          tclistclear(rv);
-          char numbuf[TCNUMBUFSIZ];
-          int len = sprintf(numbuf, "%d", tctdbqrycount(qry));
-          TCLISTPUSH(rv, numbuf, len);
-        }
-        if(tohint && rv){
-          TCXSTR *hbuf = tcxstrnew();
-          TCXSTRCAT(hbuf, "", 1);
-          TCXSTRCAT(hbuf, "", 1);
-          TCXSTRCAT(hbuf, "[[HINT]]\n", 9);
-          const char *hint = tctdbqryhint(qrys ? qrys[0] : qry);
-          TCXSTRCAT(hbuf, hint, strlen(hint));
-          TCLISTPUSH(rv, TCXSTRPTR(hbuf), TCXSTRSIZE(hbuf));
-          tcxstrdel(hbuf);
-        }
-        if(cnames) tclistdel(cnames);
-        if(qrys){
-          for(int i = 0; i < qnum; i++){
-            tctdbqrydel(qrys[i]);
-          }
-          TCFREE(qrys);
-        } else {
-          tctdbqrydel(qry);
-        }
-      } else if(!strcmp(name, "genuid")){
-        rv = tclistnew2(1);
-        char numbuf[TCNUMBUFSIZ];
-        int nsiz = sprintf(numbuf, "%lld", (long long)tctdbgenuid(adb->tdb));
-        TCLISTPUSH(rv, numbuf, nsiz);
-      } else {
-        rv = NULL;
-      }
-      break;
     case ADBOSKEL:
       skel = adb->skel;
       if(skel->misc){
@@ -3344,12 +2407,6 @@ void *tcadbreveal(TCADB *adb){
     case ADBOBDB:
       rv = adb->bdb;
       break;
-    case ADBOFDB:
-      rv = adb->fdb;
-      break;
-    case ADBOTDB:
-      rv = adb->tdb;
-      break;
     case ADBOSKEL:
       rv = adb->skel;
       break;
@@ -3404,12 +2461,6 @@ bool tcadbputproc(TCADB *adb, const void *kbuf, int ksiz, const void *vbuf, int 
     case ADBOBDB:
       if(!tcbdbputproc(adb->bdb, kbuf, ksiz, vbuf, vsiz, proc, op)) err = true;
       break;
-    case ADBOFDB:
-      if(!tcfdbputproc(adb->fdb, tcfdbkeytoid(kbuf, ksiz), vbuf, vsiz, proc, op)) err = true;
-      break;
-    case ADBOTDB:
-      if(!tctdbputproc(adb->tdb, kbuf, ksiz, vbuf, vsiz, proc, op)) err = true;
-      break;
     case ADBOSKEL:
       skel = adb->skel;
       if(skel->putproc){
@@ -3443,12 +2494,6 @@ bool tcadbforeach(TCADB *adb, TCITER iter, void *op){
       break;
     case ADBOBDB:
       if(!tcbdbforeach(adb->bdb, iter, op)) err = true;
-      break;
-    case ADBOFDB:
-      if(!tcfdbforeach(adb->fdb, iter, op)) err = true;
-      break;
-    case ADBOTDB:
-      if(!tctdbforeach(adb->tdb, iter, op)) err = true;
       break;
     case ADBOSKEL:
       skel = adb->skel;
@@ -4295,42 +3340,6 @@ static int tcadbmapreccmpint64(const TCLISTDATUM *a, const TCLISTDATUM *b){
   assert(a && b);
   return tccmpint64(((TCLISTDATUM *)a)->ptr + sizeof(int), a->size - sizeof(int),
                     ((TCLISTDATUM *)b)->ptr + sizeof(int), b->size - sizeof(int), NULL);
-}
-
-
-/* Retrieve and remove each record corresponding to a query object.
-   `pkbuf' specifies the pointer to the region of the primary key.
-   `pksiz' specifies the size of the region of the primary key.
-   `cols' specifies a map object containing columns.
-   `op' specifies the pointer to the optional opaque object.
-   The return value is flags of the post treatment by bitwise-or.
-   If successful, the return value is true, else, it is false. */
-static int tcadbtdbqrygetout(const void *pkbuf, int pksiz, TCMAP *cols, void *op){
-  TCLIST *rv = ((void **)op)[0];
-  TCLIST *cnames = ((void **)op)[1];
-  int cnnum = TCLISTNUM(cnames);
-  tcmapput(cols, "", 0, pkbuf, pksiz);
-  tcmapmove(cols, "", 0, true);
-  if(cnnum > 0){
-    TCMAP *ncols = tcmapnew2(cnnum + 1);
-    for(int j = 0; j < cnnum; j++){
-      const char *cname;
-      int cnsiz;
-      TCLISTVAL(cname, cnames, j, cnsiz);
-      int cvsiz;
-      const char *cvalue = tcmapget(cols, cname, cnsiz, &cvsiz);
-      if(cvalue) tcmapput(ncols, cname, cnsiz, cvalue, cvsiz);
-    }
-    int csiz;
-    char *cbuf = tcstrjoin4(ncols, &csiz);
-    tclistpushmalloc(rv, cbuf, csiz);
-    tcmapdel(ncols);
-  } else {
-    int csiz;
-    char *cbuf = tcstrjoin4(cols, &csiz);
-    tclistpushmalloc(rv, cbuf, csiz);
-  }
-  return TDBQPOUT;
 }
 
 

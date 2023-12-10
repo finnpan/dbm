@@ -30,8 +30,6 @@ __TCADB_CLINKAGEBEGIN
 #include <tcutil.h>
 #include <tchdb.h>
 #include <tcbdb.h>
-#include <tcfdb.h>
-#include <tctdb.h>
 
 
 
@@ -46,8 +44,6 @@ typedef struct {                         /* type of structure for an abstract da
   TCNDB *ndb;                            /* on-memory tree database object */
   TCHDB *hdb;                            /* hash database object */
   TCBDB *bdb;                            /* B+ tree database object */
-  TCFDB *fdb;                            /* fixed-length databae object */
-  TCTDB *tdb;                            /* table database object */
   int64_t capnum;                        /* capacity number of records */
   int64_t capsiz;                        /* capacity size of using memory */
   uint32_t capcnt;                       /* count for capacity check */
@@ -61,8 +57,6 @@ enum {                                   /* enumeration for open modes */
   ADBONDB,                               /* on-memory tree database */
   ADBOHDB,                               /* hash database */
   ADBOBDB,                               /* B+ tree database */
-  ADBOFDB,                               /* fixed-length database */
-  ADBOTDB,                               /* table database */
   ADBOSKEL                               /* skeleton database */
 };
 
