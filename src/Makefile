@@ -1,16 +1,15 @@
-LIBRARYFILES = libtt.a libtt.so
-LIBOBJFILES = ttutil.o tculog.o tcrdb.o ttconf.o
+LIBRARYFILES = libtc.a libtc.so tcddb.so libtt.a libtt.so
+LIBOBJFILES = tcutil.o tchdb.o tcadb.o tcconf.o ttutil.o tculog.o tcrdb.o ttconf.o
 COMMANDFILES = ttserver tculmgr tcrmgr
 
-TC_PATH = ../tc
-
 CC = gcc
-CPPFLAGS = -I$(TC_PATH) -I. -DNDEBUG -D_GNU_SOURCE=1 -D_REENTRANT -D__EXTENSIONS__
+CPPFLAGS = -I. -DNDEBUG -D_GNU_SOURCE=1 -D_REENTRANT -D__EXTENSIONS__
 CFLAGS = -g -O2 -std=c99 -Wall -fPIC -fsigned-char -O2
-LDFLAGS = -L$(TC_PATH) -L.
-LIBS = -ltc -lbz2 -lz -lresolv -lnsl -ldl -lrt -lpthread -lm -lc
-LDENV = LD_RUN_PATH=$(TC_PATH):/lib:/usr/lib:/usr/local/lib:.
-RUNENV = LD_LIBRARY_PATH=$(TC_PATH):/lib:/usr/lib:/usr/local/lib:.
+LDFLAGS = -L.
+LIBS_tc = -lbz2 -lz -lrt -lpthread -lm -lc
+LIBS_tt = -ltc -lbz2 -lz -lresolv -lnsl -ldl -lrt -lpthread -lm -lc
+LDENV = LD_RUN_PATH=/lib:/usr/lib:/usr/local/lib:.
+RUNENV = LD_LIBRARY_PATH=/lib:/usr/lib:/usr/local/lib:.
 
 
 .SUFFIXES :
@@ -64,24 +63,47 @@ check :
 .PHONY : all clean check
 
 
+
+libtc.a : $(LIBOBJFILES)
+	$(AR) $(ARFLAGS) $@ $(LIBOBJFILES)
+
+
+libtc.so : $(LIBOBJFILES)
+	$(CC) $(CFLAGS) -shared -o $@ $(LIBOBJFILES) $(LDFLAGS) $(LIBS_tc)
+
+
+tcddb.so : tcddb.o
+	$(CC) $(CFLAGS) -shared -o $@ $< $(LDFLAGS) $(LIBS_tc)
+
+
+tcconf.o : tcconf.h
+
+tcutil.o : tcconf.h tcutil.h
+
+tchdb.o : tcconf.h tcutil.h tchdb.h
+
+tcadb.o : tcconf.h tcutil.h tchdb.h tcadb.h
+
+
+
 libtt.a : $(LIBOBJFILES)
 	$(AR) $(ARFLAGS) $@ $(LIBOBJFILES)
 
 
 libtt.so : $(LIBOBJFILES)
-	$(CC) $(CFLAGS) -shared -o $@ $(LIBOBJFILES) $(LDFLAGS) $(LIBS)
+	$(CC) $(CFLAGS) -shared -o $@ $(LIBOBJFILES) $(LDFLAGS) $(LIBS_tt)
 
 
 ttserver : ttserver.o $(LIBRARYFILES)
-	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS)
+	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS_tt)
 
 
 tculmgr : tculmgr.o $(LIBRARYFILES)
-	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS)
+	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS_tt)
 
 
 tcrmgr : tcrmgr.o $(LIBRARYFILES)
-	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS)
+	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS_tt)
 
 
 ttconf.o : ttconf.h

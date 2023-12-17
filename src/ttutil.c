@@ -38,17 +38,6 @@
 const char *ttversion = _TT_VERSION;
 
 
-/* Get the primary name of the local host. */
-bool ttgetlocalhostname(char *name){
-  assert(name);
-  if(gethostname(name, TTADDRBUFSIZ - 1) != 0){
-    sprintf(name, "localhost");
-    return false;
-  }
-  return true;
-}
-
-
 /* Get the address of a host. */
 bool ttgethostaddr(const char *name, char *addr){
   assert(name && addr);
@@ -603,14 +592,6 @@ uint64_t ttsockgetint64(TTSOCK *sock){
 bool ttsockcheckend(TTSOCK *sock){
   assert(sock);
   return sock->end;
-}
-
-
-/* Check the size of prefetched data in a socket. */
-int ttsockcheckpfsiz(TTSOCK *sock){
-  assert(sock);
-  if(sock->end) return 0;
-  return sock->ep - sock->rp;
 }
 
 

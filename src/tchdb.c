@@ -16,7 +16,6 @@
 
 #include "tcutil.h"
 #include "tchdb.h"
-#include "tcbdb.h"
 #include "tcconf.h"
 
 #define HDBFILEMODE    00644             // permission of created files
@@ -167,8 +166,6 @@ static bool tchdbputasyncimpl(TCHDB *hdb, const char *kbuf, int ksiz, uint64_t b
 static bool tchdboutimpl(TCHDB *hdb, const char *kbuf, int ksiz, uint64_t bidx, uint8_t hash);
 static char *tchdbgetimpl(TCHDB *hdb, const char *kbuf, int ksiz, uint64_t bidx, uint8_t hash,
                           int *sp);
-static int tchdbgetintobuf(TCHDB *hdb, const char *kbuf, int ksiz, uint64_t bidx, uint8_t hash,
-                           char *vbuf, int max);
 static char *tchdbgetnextimpl(TCHDB *hdb, const char *kbuf, int ksiz, int *sp,
                               const char **vbp, int *vsp);
 static int tchdbvsizimpl(TCHDB *hdb, const char *kbuf, int ksiz, uint64_t bidx, uint8_t hash);
@@ -456,13 +453,6 @@ bool tchdbput(TCHDB *hdb, const void *kbuf, int ksiz, const void *vbuf, int vsiz
 }
 
 
-/* Store a string record into a hash database object. */
-bool tchdbput2(TCHDB *hdb, const char *kstr, const char *vstr){
-  assert(hdb && kstr && vstr);
-  return tchdbput(hdb, kstr, strlen(kstr), vstr, strlen(vstr));
-}
-
-
 /* Store a new record into a hash database object. */
 bool tchdbputkeep(TCHDB *hdb, const void *kbuf, int ksiz, const void *vbuf, int vsiz){
   assert(hdb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0);
@@ -513,12 +503,6 @@ bool tchdbputkeep(TCHDB *hdb, const void *kbuf, int ksiz, const void *vbuf, int 
   if(hdb->dfunit > 0 && hdb->dfcnt > hdb->dfunit &&
      !tchdbdefrag(hdb, hdb->dfunit * HDBDFRSRAT + 1)) rv = false;
   return rv;
-}
-
-
-/* Store a new string record into a hash database object. */
-bool tchdbputkeep2(TCHDB *hdb, const char *kstr, const char *vstr){
-  return tchdbputkeep(hdb, kstr, strlen(kstr), vstr, strlen(vstr));
 }
 
 
@@ -673,13 +657,6 @@ bool tchdbout(TCHDB *hdb, const void *kbuf, int ksiz){
 }
 
 
-/* Remove a string record of a hash database object. */
-bool tchdbout2(TCHDB *hdb, const char *kstr){
-  assert(hdb && kstr);
-  return tchdbout(hdb, kstr, strlen(kstr));
-}
-
-
 /* Retrieve a record in a hash database object. */
 void *tchdbget(TCHDB *hdb, const void *kbuf, int ksiz, int *sp){
   assert(hdb && kbuf && ksiz >= 0 && sp);
@@ -700,40 +677,6 @@ void *tchdbget(TCHDB *hdb, const void *kbuf, int ksiz, int *sp){
     return false;
   }
   char *rv = tchdbgetimpl(hdb, kbuf, ksiz, bidx, hash, sp);
-  HDBUNLOCKRECORD(hdb, bidx);
-  HDBUNLOCKMETHOD(hdb);
-  return rv;
-}
-
-
-/* Retrieve a string record in a hash database object. */
-char *tchdbget2(TCHDB *hdb, const char *kstr){
-  assert(hdb && kstr);
-  int vsiz;
-  return tchdbget(hdb, kstr, strlen(kstr), &vsiz);
-}
-
-
-/* Retrieve a record in a hash database object and write the value into a buffer. */
-int tchdbget3(TCHDB *hdb, const void *kbuf, int ksiz, void *vbuf, int max){
-  assert(hdb && kbuf && ksiz >= 0 && vbuf && max >= 0);
-  if(!HDBLOCKMETHOD(hdb, false)) return -1;
-  uint8_t hash;
-  uint64_t bidx = tchdbbidx(hdb, kbuf, ksiz, &hash);
-  if(hdb->fd < 0){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    HDBUNLOCKMETHOD(hdb);
-    return -1;
-  }
-  if(hdb->async && !tchdbflushdrp(hdb)){
-    HDBUNLOCKMETHOD(hdb);
-    return -1;
-  }
-  if(!HDBLOCKRECORD(hdb, bidx, false)){
-    HDBUNLOCKMETHOD(hdb);
-    return -1;
-  }
-  int rv = tchdbgetintobuf(hdb, kbuf, ksiz, bidx, hash, vbuf, max);
   HDBUNLOCKRECORD(hdb, bidx);
   HDBUNLOCKMETHOD(hdb);
   return rv;
@@ -763,13 +706,6 @@ int tchdbvsiz(TCHDB *hdb, const void *kbuf, int ksiz){
   HDBUNLOCKRECORD(hdb, bidx);
   HDBUNLOCKMETHOD(hdb);
   return rv;
-}
-
-
-/* Get the size of the value of a string record in a hash database object. */
-int tchdbvsiz2(TCHDB *hdb, const char *kstr){
-  assert(hdb && kstr);
-  return tchdbvsiz(hdb, kstr, strlen(kstr));
 }
 
 
@@ -808,14 +744,6 @@ void *tchdbiternext(TCHDB *hdb, int *sp){
   char *rv = tchdbiternextimpl(hdb, sp);
   HDBUNLOCKMETHOD(hdb);
   return rv;
-}
-
-
-/* Get the next key string of the iterator of a hash database object. */
-char *tchdbiternext2(TCHDB *hdb){
-  assert(hdb);
-  int vsiz;
-  return tchdbiternext(hdb, &vsiz);
 }
 
 
@@ -867,13 +795,6 @@ TCLIST *tchdbfwmkeys(TCHDB *hdb, const void *pbuf, int psiz, int max){
   hdb->iter = iter;
   HDBUNLOCKMETHOD(hdb);
   return keys;
-}
-
-
-/* Get forward matching string keys in a hash database object. */
-TCLIST *tchdbfwmkeys2(TCHDB *hdb, const char *pstr, int max){
-  assert(hdb && pstr);
-  return tchdbfwmkeys(hdb, pstr, strlen(pstr), max);
 }
 
 
@@ -1285,35 +1206,10 @@ void tchdbsetecode(TCHDB *hdb, int ecode, const char *filename, int line, const 
 }
 
 
-/* Set the type of a hash database object. */
-void tchdbsettype(TCHDB *hdb, uint8_t type){
-  assert(hdb);
-  if(hdb->fd >= 0){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    return;
-  }
-  hdb->type = type;
-}
-
-
 /* Set the file descriptor for debugging output. */
 void tchdbsetdbgfd(TCHDB *hdb, int fd){
   assert(hdb && fd >= 0);
   hdb->dbgfd = fd;
-}
-
-
-/* Get the file descriptor for debugging output. */
-int tchdbdbgfd(TCHDB *hdb){
-  assert(hdb);
-  return hdb->dbgfd;
-}
-
-
-/* Check whether mutual exclusion control is set to a hash database object. */
-bool tchdbhasmutex(TCHDB *hdb){
-  assert(hdb);
-  return hdb->mmtx != NULL;
 }
 
 
@@ -1343,94 +1239,6 @@ bool tchdbmemsync(TCHDB *hdb, bool phys){
 }
 
 
-/* Get the number of elements of the bucket array of a hash database object. */
-uint64_t tchdbbnum(TCHDB *hdb){
-  assert(hdb);
-  if(hdb->fd < 0){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    return 0;
-  }
-  return hdb->bnum;
-}
-
-
-/* Get the record alignment a hash database object. */
-uint32_t tchdbalign(TCHDB *hdb){
-  assert(hdb);
-  if(hdb->fd < 0){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    return 0;
-  }
-  return hdb->align;
-}
-
-
-/* Get the maximum number of the free block pool of a a hash database object. */
-uint32_t tchdbfbpmax(TCHDB *hdb){
-  assert(hdb);
-  if(hdb->fd < 0){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    return 0;
-  }
-  return hdb->fbpmax;
-}
-
-
-/* Get the size of the extra mapped memory of a hash database object. */
-uint64_t tchdbxmsiz(TCHDB *hdb){
-  assert(hdb);
-  if(hdb->fd < 0){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    return 0;
-  }
-  return hdb->xmsiz;
-}
-
-
-/* Get the inode number of the database file of a hash database object. */
-uint64_t tchdbinode(TCHDB *hdb){
-  assert(hdb);
-  if(hdb->fd < 0){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    return 0;
-  }
-  return hdb->inode;
-}
-
-
-/* Get the modification time of the database file of a hash database object. */
-time_t tchdbmtime(TCHDB *hdb){
-  assert(hdb);
-  if(hdb->fd < 0){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    return 0;
-  }
-  return hdb->mtime;
-}
-
-
-/* Get the connection mode of a hash database object. */
-int tchdbomode(TCHDB *hdb){
-  assert(hdb);
-  if(hdb->fd < 0){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    return 0;
-  }
-  return hdb->omode;
-}
-
-
-/* Get the database type of a hash database object. */
-uint8_t tchdbtype(TCHDB *hdb){
-  assert(hdb);
-  if(hdb->fd < 0){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    return 0;
-  }
-  return hdb->type;
-}
-
-
 /* Get the additional flags of a hash database object. */
 uint8_t tchdbflags(TCHDB *hdb){
   assert(hdb);
@@ -1442,17 +1250,6 @@ uint8_t tchdbflags(TCHDB *hdb){
 }
 
 
-/* Get the options of a hash database object. */
-uint8_t tchdbopts(TCHDB *hdb){
-  assert(hdb);
-  if(hdb->fd < 0){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    return 0;
-  }
-  return hdb->opts;
-}
-
-
 /* Get the pointer to the opaque field of a hash database object. */
 char *tchdbopaque(TCHDB *hdb){
   assert(hdb);
@@ -1461,54 +1258,6 @@ char *tchdbopaque(TCHDB *hdb){
     return NULL;
   }
   return hdb->map + HDBOPAQUEOFF;
-}
-
-
-/* Get the number of used elements of the bucket array of a hash database object. */
-uint64_t tchdbbnumused(TCHDB *hdb){
-  assert(hdb);
-  if(hdb->fd < 0){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    return 0;
-  }
-  uint64_t unum = 0;
-  if(hdb->ba64){
-    uint64_t *buckets = hdb->ba64;
-    for(int i = 0; i < hdb->bnum; i++){
-      if(buckets[i]) unum++;
-    }
-  } else {
-    uint32_t *buckets = hdb->ba32;
-    for(int i = 0; i < hdb->bnum; i++){
-      if(buckets[i]) unum++;
-    }
-  }
-  return unum;
-}
-
-
-/* Set the custom codec functions of a hash database object. */
-bool tchdbsetcodecfunc(TCHDB *hdb, TCCODEC enc, void *encop, TCCODEC dec, void *decop){
-  assert(hdb && enc && dec);
-  if(!HDBLOCKMETHOD(hdb, true)) return false;
-  if(hdb->fd >= 0){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    HDBUNLOCKMETHOD(hdb);
-    return false;
-  }
-  hdb->enc = enc;
-  hdb->encop = encop;
-  hdb->dec = dec;
-  hdb->decop = decop;
-  HDBUNLOCKMETHOD(hdb);
-  return true;
-}
-
-
-/* Get the unit step number of auto defragmentation of a hash database object. */
-uint32_t tchdbdfunit(TCHDB *hdb){
-  assert(hdb);
-  return hdb->dfunit;
 }
 
 
@@ -1684,16 +1433,6 @@ bool tchdbputproc(TCHDB *hdb, const void *kbuf, int ksiz, const void *vbuf, int 
 }
 
 
-/* Get the custom codec functions of a hash database object. */
-void tchdbcodecfunc(TCHDB *hdb, TCCODEC *ep, void **eop, TCCODEC *dp, void **dop){
-  assert(hdb && ep && eop && dp && dop);
-  *ep = hdb->enc;
-  *eop = hdb->encop;
-  *dp = hdb->dec;
-  *dop = hdb->decop;
-}
-
-
 /* Retrieve the next record of a record in a hash database object. */
 void *tchdbgetnext(TCHDB *hdb, const void *kbuf, int ksiz, int *sp){
   assert(hdb && sp);
@@ -1708,33 +1447,6 @@ void *tchdbgetnext(TCHDB *hdb, const void *kbuf, int ksiz, int *sp){
     return NULL;
   }
   char *rv = tchdbgetnextimpl(hdb, kbuf, ksiz, sp, NULL, NULL);
-  HDBUNLOCKMETHOD(hdb);
-  return rv;
-}
-
-
-/* Retrieve the next record of a string record in a hash database object. */
-char *tchdbgetnext2(TCHDB *hdb, const char *kstr){
-  assert(hdb);
-  int vsiz;
-  return tchdbgetnext(hdb, kstr, strlen(kstr), &vsiz);
-}
-
-
-/* Retrieve the key and the value of the next record of a record in a hash database object. */
-char *tchdbgetnext3(TCHDB *hdb, const char *kbuf, int ksiz, int *sp, const char **vbp, int *vsp){
-  assert(hdb && sp && vbp && vsp);
-  if(!HDBLOCKMETHOD(hdb, true)) return NULL;
-  if(hdb->fd < 0){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    HDBUNLOCKMETHOD(hdb);
-    return NULL;
-  }
-  if(hdb->async && !tchdbflushdrp(hdb)){
-    HDBUNLOCKMETHOD(hdb);
-    return NULL;
-  }
-  char *rv = tchdbgetnextimpl(hdb, kbuf, ksiz, sp, vbp, vsp);
   HDBUNLOCKMETHOD(hdb);
   return rv;
 }
@@ -1756,13 +1468,6 @@ bool tchdbiterinit2(TCHDB *hdb, const void *kbuf, int ksiz){
   bool rv = tchdbiterjumpimpl(hdb, kbuf, ksiz);
   HDBUNLOCKMETHOD(hdb);
   return rv;
-}
-
-
-/* Move the iterator to the record corresponding a key string of a hash database object. */
-bool tchdbiterinit3(TCHDB *hdb, const char *kstr){
-  assert(hdb && kstr);
-  return tchdbiterinit2(hdb, kstr, strlen(kstr));
 }
 
 
@@ -1789,22 +1494,6 @@ bool tchdbforeach(TCHDB *hdb, TCITER iter, void *op){
   HDBUNLOCKMETHOD(hdb);
   return rv;
 }
-
-
-/* Void the transaction of a hash database object. */
-bool tchdbtranvoid(TCHDB *hdb){
-  assert(hdb);
-  if(!HDBLOCKMETHOD(hdb, true)) return false;
-  if(hdb->fd < 0 || !(hdb->omode & HDBOWRITER) || hdb->fatal || !hdb->tran){
-    tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
-    HDBUNLOCKMETHOD(hdb);
-    return false;
-  }
-  hdb->tran = false;
-  HDBUNLOCKMETHOD(hdb);
-  return true;
-}
-
 
 
 /*************************************************************************************************
@@ -4048,105 +3737,6 @@ static char *tchdbgetimpl(TCHDB *hdb, const char *kbuf, int ksiz, uint64_t bidx,
   }
   tchdbsetecode(hdb, TCENOREC, __FILE__, __LINE__, __func__);
   return NULL;
-}
-
-
-/* Retrieve a record in a hash database object and write the value into a buffer.
-   `hdb' specifies the hash database object.
-   `kbuf' specifies the pointer to the region of the key.
-   `ksiz' specifies the size of the region of the key.
-   `bidx' specifies the index of the bucket array.
-   `hash' specifies the hash value for the collision tree.
-   `vbuf' specifies the pointer to the buffer into which the value of the corresponding record is
-   written.
-   `max' specifies the size of the buffer.
-   If successful, the return value is the size of the written data, else, it is -1. */
-static int tchdbgetintobuf(TCHDB *hdb, const char *kbuf, int ksiz, uint64_t bidx, uint8_t hash,
-                           char *vbuf, int max){
-  assert(hdb && kbuf && ksiz >= 0 && vbuf && max >= 0);
-  if(hdb->recc){
-    int tvsiz;
-    char *tvbuf = tcmdbget(hdb->recc, kbuf, ksiz, &tvsiz);
-    if(tvbuf){
-      if(*tvbuf == '*'){
-        tchdbsetecode(hdb, TCENOREC, __FILE__, __LINE__, __func__);
-        TCFREE(tvbuf);
-        return -1;
-      }
-      tvsiz = tclmin(tvsiz - 1, max);
-      memcpy(vbuf, tvbuf + 1, tvsiz);
-      TCFREE(tvbuf);
-      return tvsiz;
-    }
-  }
-  off_t off = tchdbgetbucket(hdb, bidx);
-  TCHREC rec;
-  char rbuf[HDBIOBUFSIZ];
-  while(off > 0){
-    rec.off = off;
-    if(!tchdbreadrec(hdb, &rec, rbuf)) return -1;
-    if(hash > rec.hash){
-      off = rec.left;
-    } else if(hash < rec.hash){
-      off = rec.right;
-    } else {
-      if(!rec.kbuf && !tchdbreadrecbody(hdb, &rec)) return -1;
-      int kcmp = tcreckeycmp(kbuf, ksiz, rec.kbuf, rec.ksiz);
-      if(kcmp > 0){
-        off = rec.left;
-        TCFREE(rec.bbuf);
-        rec.kbuf = NULL;
-        rec.bbuf = NULL;
-      } else if(kcmp < 0){
-        off = rec.right;
-        TCFREE(rec.bbuf);
-        rec.kbuf = NULL;
-        rec.bbuf = NULL;
-      } else {
-        if(!rec.vbuf && !tchdbreadrecbody(hdb, &rec)) return -1;
-        if(hdb->zmode){
-          int zsiz;
-          char *zbuf;
-          if(hdb->opts & HDBTDEFLATE){
-            zbuf = _tc_inflate(rec.vbuf, rec.vsiz, &zsiz, _TCZMRAW);
-          } else if(hdb->opts & HDBTBZIP){
-            zbuf = _tc_bzdecompress(rec.vbuf, rec.vsiz, &zsiz);
-          } else if(hdb->opts & HDBTTCBS){
-            zbuf = tcbsdecode(rec.vbuf, rec.vsiz, &zsiz);
-          } else {
-            zbuf = hdb->dec(rec.vbuf, rec.vsiz, &zsiz, hdb->decop);
-          }
-          TCFREE(rec.bbuf);
-          if(!zbuf){
-            tchdbsetecode(hdb, TCEMISC, __FILE__, __LINE__, __func__);
-            return -1;
-          }
-          if(hdb->recc){
-            if(tcmdbrnum(hdb->recc) >= hdb->rcnum) tchdbcacheadjust(hdb);
-            tcmdbput4(hdb->recc, kbuf, ksiz, "=", 1, zbuf, zsiz);
-          }
-          zsiz = tclmin(zsiz, max);
-          memcpy(vbuf, zbuf, zsiz);
-          TCFREE(zbuf);
-          return zsiz;
-        }
-        if(hdb->recc){
-          if(tcmdbrnum(hdb->recc) >= hdb->rcnum) tchdbcacheadjust(hdb);
-          tcmdbput4(hdb->recc, kbuf, ksiz, "=", 1, rec.vbuf, rec.vsiz);
-        }
-        int vsiz = tclmin(rec.vsiz, max);
-        memcpy(vbuf, rec.vbuf, vsiz);
-        TCFREE(rec.bbuf);
-        return vsiz;
-      }
-    }
-  }
-  if(hdb->recc){
-    if(tcmdbrnum(hdb->recc) >= hdb->rcnum) tchdbcacheadjust(hdb);
-    tcmdbput(hdb->recc, kbuf, ksiz, "*", 1);
-  }
-  tchdbsetecode(hdb, TCENOREC, __FILE__, __LINE__, __func__);
-  return -1;
 }
 
 

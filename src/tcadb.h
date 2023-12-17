@@ -29,7 +29,6 @@ __TCADB_CLINKAGEBEGIN
 
 #include <tcutil.h>
 #include <tchdb.h>
-#include <tcbdb.h>
 
 
 
@@ -41,22 +40,17 @@ __TCADB_CLINKAGEBEGIN
 typedef struct {                         /* type of structure for an abstract database */
   int omode;                             /* open mode */
   TCMDB *mdb;                            /* on-memory hash database object */
-  TCNDB *ndb;                            /* on-memory tree database object */
   TCHDB *hdb;                            /* hash database object */
-  TCBDB *bdb;                            /* B+ tree database object */
   int64_t capnum;                        /* capacity number of records */
   int64_t capsiz;                        /* capacity size of using memory */
   uint32_t capcnt;                       /* count for capacity check */
-  BDBCUR *cur;                           /* cursor of B+ tree */
   void *skel;                            /* skeleton database */
 } TCADB;
 
 enum {                                   /* enumeration for open modes */
   ADBOVOID,                              /* not opened */
   ADBOMDB,                               /* on-memory hash database */
-  ADBONDB,                               /* on-memory tree database */
   ADBOHDB,                               /* hash database */
-  ADBOBDB,                               /* B+ tree database */
   ADBOSKEL                               /* skeleton database */
 };
 
@@ -117,15 +111,6 @@ bool tcadbclose(TCADB *adb);
 bool tcadbput(TCADB *adb, const void *kbuf, int ksiz, const void *vbuf, int vsiz);
 
 
-/* Store a string record into an abstract object.
-   `adb' specifies the abstract database object.
-   `kstr' specifies the string of the key.
-   `vstr' specifies the string of the value.
-   If successful, the return value is true, else, it is false.
-   If a record with the same key exists in the database, it is overwritten. */
-bool tcadbput2(TCADB *adb, const char *kstr, const char *vstr);
-
-
 /* Store a new record into an abstract database object.
    `adb' specifies the abstract database object.
    `kbuf' specifies the pointer to the region of the key.
@@ -135,15 +120,6 @@ bool tcadbput2(TCADB *adb, const char *kstr, const char *vstr);
    If successful, the return value is true, else, it is false.
    If a record with the same key exists in the database, this function has no effect. */
 bool tcadbputkeep(TCADB *adb, const void *kbuf, int ksiz, const void *vbuf, int vsiz);
-
-
-/* Store a new string record into an abstract database object.
-   `adb' specifies the abstract database object.
-   `kstr' specifies the string of the key.
-   `vstr' specifies the string of the value.
-   If successful, the return value is true, else, it is false.
-   If a record with the same key exists in the database, this function has no effect. */
-bool tcadbputkeep2(TCADB *adb, const char *kstr, const char *vstr);
 
 
 /* Concatenate a value at the end of the existing record in an abstract database object.
@@ -157,28 +133,12 @@ bool tcadbputkeep2(TCADB *adb, const char *kstr, const char *vstr);
 bool tcadbputcat(TCADB *adb, const void *kbuf, int ksiz, const void *vbuf, int vsiz);
 
 
-/* Concatenate a string value at the end of the existing record in an abstract database object.
-   `adb' specifies the abstract database object.
-   `kstr' specifies the string of the key.
-   `vstr' specifies the string of the value.
-   If successful, the return value is true, else, it is false.
-   If there is no corresponding record, a new record is created. */
-bool tcadbputcat2(TCADB *adb, const char *kstr, const char *vstr);
-
-
 /* Remove a record of an abstract database object.
    `adb' specifies the abstract database object.
    `kbuf' specifies the pointer to the region of the key.
    `ksiz' specifies the size of the region of the key.
    If successful, the return value is true, else, it is false. */
 bool tcadbout(TCADB *adb, const void *kbuf, int ksiz);
-
-
-/* Remove a string record of an abstract database object.
-   `adb' specifies the abstract database object.
-   `kstr' specifies the string of the key.
-   If successful, the return value is true, else, it is false. */
-bool tcadbout2(TCADB *adb, const char *kstr);
 
 
 /* Retrieve a record in an abstract database object.
@@ -196,16 +156,6 @@ bool tcadbout2(TCADB *adb, const char *kstr);
 void *tcadbget(TCADB *adb, const void *kbuf, int ksiz, int *sp);
 
 
-/* Retrieve a string record in an abstract database object.
-   `adb' specifies the abstract database object.
-   `kstr' specifies the string of the key.
-   If successful, the return value is the string of the value of the corresponding record.
-   `NULL' is returned if no record corresponds.
-   Because the region of the return value is allocated with the `malloc' call, it should be
-   released with the `free' call when it is no longer in use. */
-char *tcadbget2(TCADB *adb, const char *kstr);
-
-
 /* Get the size of the value of a record in an abstract database object.
    `adb' specifies the abstract database object.
    `kbuf' specifies the pointer to the region of the key.
@@ -213,14 +163,6 @@ char *tcadbget2(TCADB *adb, const char *kstr);
    If successful, the return value is the size of the value of the corresponding record, else,
    it is -1. */
 int tcadbvsiz(TCADB *adb, const void *kbuf, int ksiz);
-
-
-/* Get the size of the value of a string record in an abstract database object.
-   `adb' specifies the abstract database object.
-   `kstr' specifies the string of the key.
-   If successful, the return value is the size of the value of the corresponding record, else,
-   it is -1. */
-int tcadbvsiz2(TCADB *adb, const char *kstr);
 
 
 /* Initialize the iterator of an abstract database object.
@@ -247,19 +189,6 @@ bool tcadbiterinit(TCADB *adb);
 void *tcadbiternext(TCADB *adb, int *sp);
 
 
-/* Get the next key string of the iterator of an abstract database object.
-   `adb' specifies the abstract database object.
-   If successful, the return value is the string of the next key, else, it is `NULL'.  `NULL' is
-   returned when no record is to be get out of the iterator.
-   Because the region of the return value is allocated with the `malloc' call, it should be
-   released with the `free' call when it is no longer in use.  It is possible to access every
-   record by iteration of calling this function.  However, it is not assured if updating the
-   database is occurred while the iteration.  Besides, the order of this traversal access method
-   is arbitrary, so it is not assured that the order of storing matches the one of the traversal
-   access. */
-char *tcadbiternext2(TCADB *adb);
-
-
 /* Get forward matching keys in an abstract database object.
    `adb' specifies the abstract database object.
    `pbuf' specifies the pointer to the region of the prefix.
@@ -272,19 +201,6 @@ char *tcadbiternext2(TCADB *adb);
    deleted with the function `tclistdel' when it is no longer in use.  Note that this function
    may be very slow because every key in the database is scanned. */
 TCLIST *tcadbfwmkeys(TCADB *adb, const void *pbuf, int psiz, int max);
-
-
-/* Get forward matching string keys in an abstract database object.
-   `adb' specifies the abstract database object.
-   `pstr' specifies the string of the prefix.
-   `max' specifies the maximum number of keys to be fetched.  If it is negative, no limit is
-   specified.
-   The return value is a list object of the corresponding keys.  This function does never fail.
-   It returns an empty list even if no key corresponds.
-   Because the object of the return value is created with the function `tclistnew', it should be
-   deleted with the function `tclistdel' when it is no longer in use.  Note that this function
-   may be very slow because every key in the database is scanned. */
-TCLIST *tcadbfwmkeys2(TCADB *adb, const char *pstr, int max);
 
 
 /* Add an integer to a record in an abstract database object.
@@ -509,29 +425,6 @@ bool tcadbputproc(TCADB *adb, const void *kbuf, int ksiz, const void *vbuf, int 
    it is not needed, `NULL' can be specified.
    If successful, the return value is true, else, it is false. */
 bool tcadbforeach(TCADB *adb, TCITER iter, void *op);
-
-
-/* Map records of an abstract database object into another B+ tree database.
-   `adb' specifies the abstract database object.
-   `keys' specifies a list object of the keys of the target records.  If it is `NULL', every
-   record is processed.
-   `bdb' specifies the B+ tree database object into which records emitted by the mapping function
-   are stored.
-   `proc' specifies the pointer to the mapping function called for each record.
-   `op' specifies specifies the pointer to the optional opaque object for the mapping function.
-   `csiz' specifies the size of the cache to sort emitted records.  If it is negative, the
-   default size is specified.  The default size is 268435456.
-   If successful, the return value is true, else, it is false. */
-bool tcadbmapbdb(TCADB *adb, TCLIST *keys, TCBDB *bdb, ADBMAPPROC proc, void *op, int64_t csiz);
-
-
-/* Emit records generated by the mapping function into the result map.
-   `kbuf' specifies the pointer to the region of the key.
-   `ksiz' specifies the size of the region of the key.
-   `vbuf' specifies the pointer to the region of the value.
-   `vsiz' specifies the size of the region of the value.
-   If successful, the return value is true, else, it is false. */
-bool tcadbmapbdbemit(void *map, const char *kbuf, int ksiz, const char *vbuf, int vsiz);
 
 
 

@@ -23,14 +23,6 @@
 #define RDBRECONWAIT   0.1               // wait time to reconnect
 #define RDBNUMCOLMAX   16                // maximum number of columns of the long double
 
-typedef struct {                         // type of structure for a meta search query
-  pthread_t tid;                         // thread ID number
-  RDBQRY *qry;                           // query object
-  TCLIST *res;                           // response object
-  int max;                               // max number of retrieval
-  int skip;                              // skipping number of retrieval
-} PARASEARCHARG;
-
 typedef struct {                         // type of structure for a sort record
   const char *cbuf;                      // pointer to the column buffer
   int csiz;                              // size of the column buffer
@@ -75,7 +67,6 @@ static uint64_t tcrdbrnumimpl(TCRDB *rdb);
 static uint64_t tcrdbsizeimpl(TCRDB *rdb);
 static char *tcrdbstatimpl(TCRDB *rdb);
 static TCLIST *tcrdbmiscimpl(TCRDB *rdb, const char *name, int opts, const TCLIST *args);
-static void tcrdbqrypopmeta(RDBQRY *qry, TCLIST *res);
 
 
 
@@ -219,13 +210,6 @@ bool tcrdbput(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int vsiz
 }
 
 
-/* Store a string record into a remote object. */
-bool tcrdbput2(TCRDB *rdb, const char *kstr, const char *vstr){
-  assert(rdb && kstr && vstr);
-  return tcrdbput(rdb, kstr, strlen(kstr), vstr, strlen(vstr));
-}
-
-
 /* Store a new record into a remote database object. */
 bool tcrdbputkeep(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int vsiz){
   assert(rdb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0);
@@ -235,13 +219,6 @@ bool tcrdbputkeep(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int 
   rv = tcrdbputkeepimpl(rdb, kbuf, ksiz, vbuf, vsiz);
   pthread_cleanup_pop(1);
   return rv;
-}
-
-
-/* Store a new string record into a remote database object. */
-bool tcrdbputkeep2(TCRDB *rdb, const char *kstr, const char *vstr){
-  assert(rdb && kstr && vstr);
-  return tcrdbputkeep(rdb, kstr, strlen(kstr), vstr, strlen(vstr));
 }
 
 
@@ -257,13 +234,6 @@ bool tcrdbputcat(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int v
 }
 
 
-/* Concatenate a string value at the end of the existing record in a remote database object. */
-bool tcrdbputcat2(TCRDB *rdb, const char *kstr, const char *vstr){
-  assert(rdb && kstr && vstr);
-  return tcrdbputcat(rdb, kstr, strlen(kstr), vstr, strlen(vstr));
-}
-
-
 /* Concatenate a value at the end of the existing record and shift it to the left. */
 bool tcrdbputshl(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int vsiz, int width){
   assert(rdb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0 && width >= 0);
@@ -273,13 +243,6 @@ bool tcrdbputshl(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int v
   rv = tcrdbputshlimpl(rdb, kbuf, ksiz, vbuf, vsiz, width);
   pthread_cleanup_pop(1);
   return rv;
-}
-
-
-/* Concatenate a string value at the end of the existing record and shift it to the left. */
-bool tcrdbputshl2(TCRDB *rdb, const char *kstr, const char *vstr, int width){
-  assert(rdb && kstr && vstr);
-  return tcrdbputshl(rdb, kstr, strlen(kstr), vstr, strlen(vstr), width);
 }
 
 
@@ -314,13 +277,6 @@ bool tcrdbout(TCRDB *rdb, const void *kbuf, int ksiz){
 }
 
 
-/* Remove a string record of a remote database object. */
-bool tcrdbout2(TCRDB *rdb, const char *kstr){
-  assert(rdb && kstr);
-  return tcrdbout(rdb, kstr, strlen(kstr));
-}
-
-
 /* Retrieve a record in a remote database object. */
 void *tcrdbget(TCRDB *rdb, const void *kbuf, int ksiz, int *sp){
   assert(rdb && kbuf && ksiz >= 0 && sp);
@@ -330,14 +286,6 @@ void *tcrdbget(TCRDB *rdb, const void *kbuf, int ksiz, int *sp){
   rv = tcrdbgetimpl(rdb, kbuf, ksiz, sp);
   pthread_cleanup_pop(1);
   return rv;
-}
-
-
-/* Retrieve a string record in a remote database object. */
-char *tcrdbget2(TCRDB *rdb, const char *kstr){
-  assert(rdb && kstr);
-  int vsiz;
-  return tcrdbget(rdb, kstr, strlen(kstr), &vsiz);
 }
 
 
@@ -365,13 +313,6 @@ int tcrdbvsiz(TCRDB *rdb, const void *kbuf, int ksiz){
 }
 
 
-/* Get the size of the value of a string record in a remote database object. */
-int tcrdbvsiz2(TCRDB *rdb, const char *kstr){
-  assert(rdb && kstr);
-  return tcrdbvsiz(rdb, kstr, strlen(kstr));
-}
-
-
 /* Initialize the iterator of a remote database object. */
 bool tcrdbiterinit(TCRDB *rdb){
   assert(rdb);
@@ -393,14 +334,6 @@ void *tcrdbiternext(TCRDB *rdb, int *sp){
   rv = tcrdbiternextimpl(rdb, sp);
   pthread_cleanup_pop(1);
   return rv;
-}
-
-
-/* Get the next key string of the iterator of a remote database object. */
-char *tcrdbiternext2(TCRDB *rdb){
-  assert(rdb);
-  int vsiz;
-  return tcrdbiternext(rdb, &vsiz);
 }
 
 
@@ -457,14 +390,6 @@ void *tcrdbext(TCRDB *rdb, const char *name, int opts,
   rv = tcrdbextimpl(rdb, name, opts, kbuf, ksiz, vbuf, vsiz, sp);
   pthread_cleanup_pop(1);
   return rv;
-}
-
-
-/* Call a function of the scripting language extension with string parameters. */
-char *tcrdbext2(TCRDB *rdb, const char *name, int opts, const char *kstr, const char *vstr){
-  assert(rdb && name && kstr && vstr);
-  int vsiz;
-  return tcrdbext(rdb, name, opts, kstr, strlen(kstr), vstr, strlen(vstr), &vsiz);
 }
 
 
@@ -610,322 +535,6 @@ TCLIST *tcrdbmisc(TCRDB *rdb, const char *name, int opts, const TCLIST *args){
   pthread_cleanup_pop(1);
   return rv;
 }
-
-
-
-/*************************************************************************************************
- * table extension
- *************************************************************************************************/
-
-
-/* Store a record into a remote database object. */
-bool tcrdbtblput(TCRDB *rdb, const void *pkbuf, int pksiz, TCMAP *cols){
-  assert(rdb && pkbuf && pksiz >= 0 && cols);
-  TCLIST *args = tclistnew2(tcmaprnum(cols) * 2 + 1);
-  tclistpush(args, pkbuf, pksiz);
-  tcmapiterinit(cols);
-  const char *kbuf;
-  int ksiz;
-  while((kbuf = tcmapiternext(cols, &ksiz)) != NULL){
-    int vsiz;
-    const char *vbuf = tcmapiterval(kbuf, &vsiz);
-    tclistpush(args, kbuf, ksiz);
-    tclistpush(args, vbuf, vsiz);
-  }
-  TCLIST *rv = tcrdbmisc(rdb, "put", 0, args);
-  tclistdel(args);
-  if(!rv) return false;
-  tclistdel(rv);
-  return true;
-}
-
-
-/* Store a new record into a remote database object. */
-bool tcrdbtblputkeep(TCRDB *rdb, const void *pkbuf, int pksiz, TCMAP *cols){
-  assert(rdb && pkbuf && pksiz >= 0 && cols);
-  TCLIST *args = tclistnew2(tcmaprnum(cols) * 2 + 1);
-  tclistpush(args, pkbuf, pksiz);
-  tcmapiterinit(cols);
-  const char *kbuf;
-  int ksiz;
-  while((kbuf = tcmapiternext(cols, &ksiz)) != NULL){
-    int vsiz;
-    const char *vbuf = tcmapiterval(kbuf, &vsiz);
-    tclistpush(args, kbuf, ksiz);
-    tclistpush(args, vbuf, vsiz);
-  }
-  TCLIST *rv = tcrdbmisc(rdb, "putkeep", 0, args);
-  tclistdel(args);
-  if(!rv){
-    if(tcrdbecode(rdb) == TTEMISC) tcrdbsetecode(rdb, TTEKEEP);
-    return false;
-  }
-  tclistdel(rv);
-  return true;
-}
-
-
-/* Concatenate columns of the existing record in a remote database object. */
-bool tcrdbtblputcat(TCRDB *rdb, const void *pkbuf, int pksiz, TCMAP *cols){
-  assert(rdb && pkbuf && pksiz >= 0 && cols);
-  TCLIST *args = tclistnew2(tcmaprnum(cols) * 2 + 1);
-  tclistpush(args, pkbuf, pksiz);
-  tcmapiterinit(cols);
-  const char *kbuf;
-  int ksiz;
-  while((kbuf = tcmapiternext(cols, &ksiz)) != NULL){
-    int vsiz;
-    const char *vbuf = tcmapiterval(kbuf, &vsiz);
-    tclistpush(args, kbuf, ksiz);
-    tclistpush(args, vbuf, vsiz);
-  }
-  TCLIST *rv = tcrdbmisc(rdb, "putcat", 0, args);
-  tclistdel(args);
-  if(!rv) return false;
-  tclistdel(rv);
-  return true;
-}
-
-
-/* Remove a record of a remote database object. */
-bool tcrdbtblout(TCRDB *rdb, const void *pkbuf, int pksiz){
-  assert(rdb && pkbuf && pksiz >= 0);
-  TCLIST *args = tclistnew2(1);
-  tclistpush(args, pkbuf, pksiz);
-  TCLIST *rv = tcrdbmisc(rdb, "out", 0, args);
-  tclistdel(args);
-  if(!rv){
-    if(tcrdbecode(rdb) == TTEMISC) tcrdbsetecode(rdb, TTENOREC);
-    return false;
-  }
-  tclistdel(rv);
-  return true;
-}
-
-
-/* Retrieve a record in a remote database object. */
-TCMAP *tcrdbtblget(TCRDB *rdb, const void *pkbuf, int pksiz){
-  assert(rdb && pkbuf && pksiz >= 0);
-  TCLIST *args = tclistnew2(1);
-  tclistpush(args, pkbuf, pksiz);
-  TCLIST *rv = tcrdbmisc(rdb, "get", RDBMONOULOG, args);
-  tclistdel(args);
-  if(!rv){
-    if(tcrdbecode(rdb) == TTEMISC) tcrdbsetecode(rdb, TTENOREC);
-    return NULL;
-  }
-  int num = tclistnum(rv);
-  TCMAP *cols = tcmapnew2(num / 2 + 1);
-  num--;
-  for(int i = 0; i < num; i += 2){
-    int ksiz;
-    const char *kbuf = tclistval(rv, i, &ksiz);
-    int vsiz;
-    const char *vbuf = tclistval(rv, i + 1, &vsiz);
-    tcmapput(cols, kbuf, ksiz, vbuf, vsiz);
-  }
-  tclistdel(rv);
-  return cols;
-}
-
-
-/* Set a column index to a remote database object. */
-bool tcrdbtblsetindex(TCRDB *rdb, const char *name, int type){
-  assert(rdb && name);
-  TCLIST *args = tclistnew2(2);
-  tclistpush2(args, name);
-  char typestr[TTNUMBUFSIZ];
-  sprintf(typestr, "%d", type);
-  tclistpush2(args, typestr);
-  TCLIST *rv = tcrdbmisc(rdb, "setindex", 0, args);
-  tclistdel(args);
-  if(!rv) return false;
-  tclistdel(rv);
-  return true;
-}
-
-
-/* Generate a unique ID number of a remote database object. */
-int64_t tcrdbtblgenuid(TCRDB *rdb){
-  assert(rdb);
-  TCLIST *args = tclistnew2(1);
-  TCLIST *rv = tcrdbmisc(rdb, "genuid", 0, args);
-  tclistdel(args);
-  if(!rv) return -1;
-  int64_t uid = -1;
-  if(tclistnum(rv) > 0) uid = tcatoi(tclistval2(rv, 0));
-  tclistdel(rv);
-  return uid;
-}
-
-
-/* Create a query object. */
-RDBQRY *tcrdbqrynew(TCRDB *rdb){
-  assert(rdb);
-  RDBQRY *qry = tcmalloc(sizeof(*qry));
-  qry->rdb = rdb;
-  qry->args = tclistnew();
-  qry->hint = tcxstrnew();
-  tclistpush(qry->args, "hint", 4);
-  return qry;
-}
-
-
-/* Delete a query object. */
-void tcrdbqrydel(RDBQRY *qry){
-  assert(qry);
-  tcxstrdel(qry->hint);
-  tclistdel(qry->args);
-  tcfree(qry);
-}
-
-
-/* Add a narrowing condition to a query object. */
-void tcrdbqryaddcond(RDBQRY *qry, const char *name, int op, const char *expr){
-  assert(qry && name && expr);
-  TCXSTR *xstr = tcxstrnew();
-  tcxstrcat2(xstr, "addcond");
-  tcxstrcat(xstr, "\0", 1);
-  tcxstrcat2(xstr, name);
-  tcxstrcat(xstr, "\0", 1);
-  tcxstrprintf(xstr, "%d", op);
-  tcxstrcat(xstr, "\0", 1);
-  tcxstrcat2(xstr, expr);
-  tclistpush(qry->args, tcxstrptr(xstr), tcxstrsize(xstr));
-  tcxstrdel(xstr);
-}
-
-
-/* Set the order of a query object. */
-void tcrdbqrysetorder(RDBQRY *qry, const char *name, int type){
-  assert(qry && name);
-  TCXSTR *xstr = tcxstrnew();
-  tcxstrcat2(xstr, "setorder");
-  tcxstrcat(xstr, "\0", 1);
-  tcxstrcat2(xstr, name);
-  tcxstrcat(xstr, "\0", 1);
-  tcxstrprintf(xstr, "%d", type);
-  tclistpush(qry->args, tcxstrptr(xstr), tcxstrsize(xstr));
-  tcxstrdel(xstr);
-}
-
-
-/* Set the limit number of records of the result of a query object. */
-void tcrdbqrysetlimit(RDBQRY *qry, int max, int skip){
-  TCXSTR *xstr = tcxstrnew();
-  tcxstrcat2(xstr, "setlimit");
-  tcxstrcat(xstr, "\0", 1);
-  tcxstrprintf(xstr, "%d", max);
-  tcxstrcat(xstr, "\0", 1);
-  tcxstrprintf(xstr, "%d", skip);
-  tclistpush(qry->args, tcxstrptr(xstr), tcxstrsize(xstr));
-  tcxstrdel(xstr);
-}
-
-
-/* Execute the search of a query object. */
-TCLIST *tcrdbqrysearch(RDBQRY *qry){
-  assert(qry);
-  tcxstrclear(qry->hint);
-  TCLIST *rv = tcrdbmisc(qry->rdb, "search", RDBMONOULOG, qry->args);
-  if(!rv) return tclistnew2(1);
-  tcrdbqrypopmeta(qry, rv);
-  return rv;
-}
-
-
-/* Remove each record corresponding to a query object. */
-bool tcrdbqrysearchout(RDBQRY *qry){
-  assert(qry);
-  TCLIST *args = tclistdup(qry->args);
-  tclistpush2(args, "out");
-  tcxstrclear(qry->hint);
-  TCLIST *rv = tcrdbmisc(qry->rdb, "search", 0, args);
-  tclistdel(args);
-  if(!rv) return false;
-  tcrdbqrypopmeta(qry, rv);
-  tclistdel(rv);
-  return true;
-}
-
-
-/* Get records corresponding to the search of a query object. */
-TCLIST *tcrdbqrysearchget(RDBQRY *qry){
-  assert(qry);
-  TCLIST *args = tclistdup(qry->args);
-  tclistpush2(args, "get");
-  tcxstrclear(qry->hint);
-  TCLIST *rv = tcrdbmisc(qry->rdb, "search", RDBMONOULOG, args);
-  tclistdel(args);
-  if(!rv) return tclistnew2(1);
-  tcrdbqrypopmeta(qry, rv);
-  return rv;
-}
-
-
-/* Get columns of a record in a search result. */
-TCMAP *tcrdbqryrescols(TCLIST *res, int index){
-  assert(res && index >= 0);
-  if(index >= tclistnum(res)) return NULL;
-  int csiz;
-  const char *cbuf = tclistval(res, index, &csiz);
-  return tcstrsplit4(cbuf, csiz);
-}
-
-
-/* Get the count of corresponding records of a query object. */
-int tcrdbqrysearchcount(RDBQRY *qry){
-  assert(qry);
-  TCLIST *args = tclistdup(qry->args);
-  tclistpush2(args, "count");
-  tcxstrclear(qry->hint);
-  TCLIST *rv = tcrdbmisc(qry->rdb, "search", RDBMONOULOG, args);
-  tclistdel(args);
-  if(!rv) return 0;
-  tcrdbqrypopmeta(qry, rv);
-  int count = tclistnum(rv) > 0 ? tcatoi(tclistval2(rv, 0)) : 0;
-  tclistdel(rv);
-  return count;
-}
-
-
-/* Get the hint string of a query object. */
-const char *tcrdbqryhint(RDBQRY *qry){
-  assert(qry);
-  return tcxstrptr(qry->hint);
-}
-
-
-/* Retrieve records with multiple query objects and get the set of the result. */
-TCLIST *tcrdbmetasearch(RDBQRY **qrys, int num, int type){
-  assert(qrys && num >= 0);
-  if(num < 1) return tclistnew2(1);
-  if(num < 2) return tcrdbqrysearch(qrys[0]);
-  RDBQRY *qry = qrys[0];
-  TCLIST *args = tclistdup(qry->args);
-  for(int i = 1; i < num; i++){
-    tclistpush(args, "next", 4);
-    const TCLIST *targs = qrys[i]->args;
-    int tanum = tclistnum(targs);
-    for(int j = 0; j < tanum; j++){
-      int vsiz;
-      const char *vbuf = tclistval(targs, j, &vsiz);
-      tclistpush(args, vbuf, vsiz);
-    }
-  }
-  char buf[TTNUMBUFSIZ];
-  int len = sprintf(buf, "mstype");
-  len += 1 + sprintf(buf + len + 1, "%d", type);
-  tclistpush(args, buf, len);
-  tcxstrclear(qry->hint);
-  TCLIST *rv = tcrdbmisc(qry->rdb, "metasearch", RDBMONOULOG, args);
-  tclistdel(args);
-  if(!rv) rv = tclistnew2(1);
-  tcrdbqrypopmeta(qrys[0], rv);
-  return rv;
-}
-
-
 
 /*************************************************************************************************
  * features for experts
@@ -2329,31 +1938,6 @@ static TCLIST *tcrdbmiscimpl(TCRDB *rdb, const char *name, int opts, const TCLIS
   }
   return res;
 }
-
-
-/* Pop meta data from the result list to the member of the query object.
-   `qry' specifies the query object.
-   `res' specifies the list object of the primary keys. */
-static void tcrdbqrypopmeta(RDBQRY *qry, TCLIST *res){
-  assert(qry && res);
-  for(int i = tclistnum(res) - 1; i >= 0; i--){
-    int pksiz;
-    const char *pkbuf = tclistval(res, i, &pksiz);
-    if(pksiz >= 11 && pkbuf[0] == '\0' && pkbuf[1] == '\0'){
-      if(!memcmp(pkbuf + 2, "[[HINT]]\n", 9)){
-        int hsiz;
-        char *hbuf = tclistpop(res, &hsiz);
-        tcxstrcat(qry->hint, hbuf + 10, hsiz - 10);
-        tcfree(hbuf);
-      } else {
-        break;
-      }
-    } else {
-      break;
-    }
-  }
-}
-
 
 
 // END OF FILE

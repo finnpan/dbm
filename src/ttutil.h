@@ -29,7 +29,6 @@ __TTUTIL_CLINKAGEBEGIN
 
 #include <tcutil.h>
 #include <tchdb.h>
-#include <tcbdb.h>
 #include <tcadb.h>
 #include <pthread.h>
 
@@ -56,13 +55,6 @@ typedef struct {                         /* type of structure for a socket */
 
 /* String containing the version information. */
 extern const char *ttversion;
-
-
-/* Get the primary name of the local host.
-   `name' specifies the pointer to the region into which the host name is written.  The size of
-   the buffer should be equal to or more than `TTADDRBUFSIZ' bytes.
-   If successful, the return value is true, else, it is false. */
-bool ttgetlocalhostname(char *name);
 
 
 /* Get the address of a host.
@@ -223,12 +215,6 @@ uint64_t ttsockgetint64(TTSOCK *sock);
    `sock' specifies the socket object.
    The return value is true if the socket is end, else, it is false. */
 bool ttsockcheckend(TTSOCK *sock);
-
-
-/* Check the size of prefetched data in a socket.
-   `sock' specifies the socket object.
-   The return value is the size of the prefetched data. */
-int ttsockcheckpfsiz(TTSOCK *sock);
 
 
 /* Fetch the resource of a URL by HTTP.
@@ -477,11 +463,6 @@ uint64_t ttstrtots(const char *str);
    `id' specifies the command ID number.
    The return value is the string of the command name. */
 const char *ttcmdidtostr(int id);
-
-
-/* tricks for backward compatibility */
-#define tcrdbqrysetmax(TC_tdb, TC_max) \
-  tcrdbqrysetlimit((TC_tdb), (TC_max), 0)
 
 
 

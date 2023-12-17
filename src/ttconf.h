@@ -210,7 +210,6 @@
 
 #include <tcutil.h>
 #include <tchdb.h>
-#include <tcbdb.h>
 #include <tcadb.h>
 
 #if defined(_SYS_FREEBSD_) || defined(_SYS_MACOSX_)
