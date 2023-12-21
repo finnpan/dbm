@@ -16,7 +16,7 @@
 
 #include "ttutil.h"
 #include "tculog.h"
-#include "ttconf.h"
+#include "conf.h"
 
 #define TCULAIOCBNUM   64                // number of AIO tasks
 #define TCULTMDEVALW   30.0              // allowed time deviance
@@ -224,16 +224,16 @@ bool tculogwrite(TCULOG *ulog, uint64_t ts, uint32_t sid, uint32_t mid,
   pthread_cleanup_push(free, (buf == stack) ? NULL : buf);
   unsigned char *wp = buf;
   *(wp++) = TCULMAGICNUM;
-  uint64_t llnum = TTHTONLL(ts);
+  uint64_t llnum = htonll(ts);
   memcpy(wp, &llnum, sizeof(llnum));
   wp += sizeof(llnum);
-  uint16_t snum = TTHTONS(sid);
+  uint16_t snum = htons(sid);
   memcpy(wp, &snum, sizeof(snum));
   wp += sizeof(snum);
-  snum = TTHTONS(mid);
+  snum = htons(mid);
   memcpy(wp, &snum, sizeof(snum));
   wp += sizeof(snum);
-  uint32_t lnum = TTHTONL(size);
+  uint32_t lnum = htonl(size);
   memcpy(wp, &lnum, sizeof(lnum));
   wp += sizeof(lnum);
   memcpy(wp, ptr, size);
@@ -340,7 +340,7 @@ TCULRD *tculrdnew(TCULOG *ulog, uint64_t ts){
     uint64_t fts = INT64_MAX;
     if(tcread(fd, buf, rsiz)){
       memcpy(&fts, buf + sizeof(uint8_t), sizeof(ts));
-      fts = TTNTOHLL(fts);
+      fts = ntohll(fts);
     }
     close(fd);
     num = i;
@@ -441,17 +441,17 @@ const void *tculrdread(TCULRD *ulrd, int *sp, uint64_t *tsp, uint32_t *sidp, uin
     }
     rp += sizeof(uint8_t);
     memcpy(&ts, rp, sizeof(ts));
-    ts = TTNTOHLL(ts);
+    ts = ntohll(ts);
     rp += sizeof(ts);
     uint16_t snum;
     memcpy(&snum, rp, sizeof(snum));
-    sid = TTNTOHS(snum);
+    sid = ntohs(snum);
     rp += sizeof(snum);
     memcpy(&snum, rp, sizeof(snum));
-    mid = TTNTOHS(snum);
+    mid = ntohs(snum);
     rp += sizeof(snum);
     memcpy(&size, rp, sizeof(size));
-    size = TTNTOHL(size);
+    size = ntohl(size);
     rp += sizeof(size);
     if(ulrd->rsiz < size + 1){
       ulrd->rbuf = tcrealloc(ulrd->rbuf, size + 1);
@@ -490,10 +490,10 @@ bool tculogadbput(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     *(wp++) = TTMAGICNUM;
     *(wp++) = TTCMDPUT;
     uint32_t lnum;
-    lnum = TTHTONL(ksiz);
+    lnum = htonl(ksiz);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
-    lnum = TTHTONL(vsiz);
+    lnum = htonl(vsiz);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
     memcpy(wp, kbuf, ksiz);
@@ -525,10 +525,10 @@ bool tculogadbputkeep(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     *(wp++) = TTMAGICNUM;
     *(wp++) = TTCMDPUTKEEP;
     uint32_t lnum;
-    lnum = TTHTONL(ksiz);
+    lnum = htonl(ksiz);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
-    lnum = TTHTONL(vsiz);
+    lnum = htonl(vsiz);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
     memcpy(wp, kbuf, ksiz);
@@ -560,10 +560,10 @@ bool tculogadbputcat(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     *(wp++) = TTMAGICNUM;
     *(wp++) = TTCMDPUTCAT;
     uint32_t lnum;
-    lnum = TTHTONL(ksiz);
+    lnum = htonl(ksiz);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
-    lnum = TTHTONL(vsiz);
+    lnum = htonl(vsiz);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
     memcpy(wp, kbuf, ksiz);
@@ -600,13 +600,13 @@ bool tculogadbputshl(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     *(wp++) = TTMAGICNUM;
     *(wp++) = TTCMDPUTSHL;
     uint32_t lnum;
-    lnum = TTHTONL(ksiz);
+    lnum = htonl(ksiz);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
-    lnum = TTHTONL(vsiz);
+    lnum = htonl(vsiz);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
-    lnum = TTHTONL(width);
+    lnum = htonl(width);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
     memcpy(wp, kbuf, ksiz);
@@ -638,7 +638,7 @@ bool tculogadbout(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     *(wp++) = TTMAGICNUM;
     *(wp++) = TTCMDOUT;
     uint32_t lnum;
-    lnum = TTHTONL(ksiz);
+    lnum = htonl(ksiz);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
     memcpy(wp, kbuf, ksiz);
@@ -667,10 +667,10 @@ int tculogadbaddint(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     *(wp++) = TTMAGICNUM;
     *(wp++) = TTCMDADDINT;
     uint32_t lnum;
-    lnum = TTHTONL(ksiz);
+    lnum = htonl(ksiz);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
-    lnum = TTHTONL(num);
+    lnum = htonl(num);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
     memcpy(wp, kbuf, ksiz);
@@ -699,7 +699,7 @@ double tculogadbadddouble(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     *(wp++) = TTMAGICNUM;
     *(wp++) = TTCMDADDDOUBLE;
     uint32_t lnum;
-    lnum = TTHTONL(ksiz);
+    lnum = htonl(ksiz);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
     ttpackdouble(num, (char *)wp);
@@ -749,7 +749,7 @@ bool tculogadboptimize(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb, con
     *(wp++) = TTMAGICNUM;
     *(wp++) = TTCMDOPTIMIZE;
     uint32_t lnum;
-    lnum = TTHTONL(psiz);
+    lnum = htonl(psiz);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
     memcpy(wp, params, psiz);
@@ -803,10 +803,10 @@ TCLIST *tculogadbmisc(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     *(wp++) = TTMAGICNUM;
     *(wp++) = TTCMDMISC;
     uint32_t lnum;
-    lnum = TTHTONL(nsiz);
+    lnum = htonl(nsiz);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
-    lnum = TTHTONL(anum);
+    lnum = htonl(anum);
     memcpy(wp, &lnum, sizeof(lnum));
     wp += sizeof(lnum);
     memcpy(wp, name, nsiz);
@@ -814,7 +814,7 @@ TCLIST *tculogadbmisc(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     for(int i = 0; i < anum; i++){
       int esiz;
       const char *ebuf = tclistval(args, i, &esiz);
-      lnum = TTHTONL(esiz);
+      lnum = htonl(esiz);
       memcpy(wp, &lnum, sizeof(lnum));
       wp += sizeof(lnum);
       memcpy(wp, ebuf, esiz);
@@ -882,11 +882,11 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
       if(size >= sizeof(uint32_t) * 2){
         uint32_t ksiz;
         memcpy(&ksiz, rp, sizeof(ksiz));
-        ksiz = TTNTOHL(ksiz);
+        ksiz = ntohl(ksiz);
         rp += sizeof(ksiz);
         uint32_t vsiz;
         memcpy(&vsiz, rp, sizeof(vsiz));
-        vsiz = TTNTOHL(vsiz);
+        vsiz = ntohl(vsiz);
         rp += sizeof(vsiz);
         if(tculogadbput(ulog, sid, mid, adb, rp, ksiz, rp + ksiz, vsiz) != exp) *cp = false;
       } else {
@@ -897,11 +897,11 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
       if(size >= sizeof(uint32_t) * 2){
         uint32_t ksiz;
         memcpy(&ksiz, rp, sizeof(ksiz));
-        ksiz = TTNTOHL(ksiz);
+        ksiz = ntohl(ksiz);
         rp += sizeof(ksiz);
         uint32_t vsiz;
         memcpy(&vsiz, rp, sizeof(vsiz));
-        vsiz = TTNTOHL(vsiz);
+        vsiz = ntohl(vsiz);
         rp += sizeof(vsiz);
         if(tculogadbputkeep(ulog, sid, mid, adb, rp, ksiz, rp + ksiz, vsiz) != exp) *cp = false;
       } else {
@@ -912,11 +912,11 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
       if(size >= sizeof(uint32_t) * 2){
         uint32_t ksiz;
         memcpy(&ksiz, rp, sizeof(ksiz));
-        ksiz = TTNTOHL(ksiz);
+        ksiz = ntohl(ksiz);
         rp += sizeof(ksiz);
         uint32_t vsiz;
         memcpy(&vsiz, rp, sizeof(vsiz));
-        vsiz = TTNTOHL(vsiz);
+        vsiz = ntohl(vsiz);
         rp += sizeof(vsiz);
         if(tculogadbputcat(ulog, sid, mid, adb, rp, ksiz, rp + ksiz, vsiz) != exp) *cp = false;
       } else {
@@ -927,15 +927,15 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
       if(size >= sizeof(uint32_t) * 3){
         uint32_t ksiz;
         memcpy(&ksiz, rp, sizeof(ksiz));
-        ksiz = TTNTOHL(ksiz);
+        ksiz = ntohl(ksiz);
         rp += sizeof(ksiz);
         uint32_t vsiz;
         memcpy(&vsiz, rp, sizeof(vsiz));
-        vsiz = TTNTOHL(vsiz);
+        vsiz = ntohl(vsiz);
         rp += sizeof(vsiz);
         uint32_t width;
         memcpy(&width, rp, sizeof(width));
-        width = TTNTOHL(width);
+        width = ntohl(width);
         rp += sizeof(width);
         if(tculogadbputshl(ulog, sid, mid, adb, rp, ksiz, rp + ksiz, vsiz, width) != exp)
           *cp = false;
@@ -947,7 +947,7 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
       if(size >= sizeof(uint32_t)){
         uint32_t ksiz;
         memcpy(&ksiz, rp, sizeof(ksiz));
-        ksiz = TTNTOHL(ksiz);
+        ksiz = ntohl(ksiz);
         rp += sizeof(ksiz);
         if(tculogadbout(ulog, sid, mid, adb, rp, ksiz) != exp) *cp = false;
       } else {
@@ -958,11 +958,11 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
       if(size >= sizeof(uint32_t) * 2){
         uint32_t ksiz;
         memcpy(&ksiz, rp, sizeof(ksiz));
-        ksiz = TTNTOHL(ksiz);
+        ksiz = ntohl(ksiz);
         rp += sizeof(ksiz);
         int32_t num;
         memcpy(&num, rp, sizeof(num));
-        num = TTNTOHL(num);
+        num = ntohl(num);
         rp += sizeof(num);
         int rnum = tculogadbaddint(ulog, sid, mid, adb, rp, ksiz, num);
         if(exp && rnum == INT_MIN) *cp = false;
@@ -974,7 +974,7 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
       if(size >= sizeof(uint32_t) + sizeof(uint64_t) * 2){
         uint32_t ksiz;
         memcpy(&ksiz, rp, sizeof(ksiz));
-        ksiz = TTNTOHL(ksiz);
+        ksiz = ntohl(ksiz);
         rp += sizeof(ksiz);
         double num = ttunpackdouble((char *)rp);
         rp += sizeof(uint64_t) * 2;
@@ -995,7 +995,7 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
       if(size >= sizeof(uint32_t)){
         uint32_t psiz;
         memcpy(&psiz, rp, sizeof(psiz));
-        psiz = TTNTOHL(psiz);
+        psiz = ntohl(psiz);
         rp += sizeof(psiz);
         char *params = tcmemdup(rp, psiz);
         if(tculogadboptimize(ulog, sid, mid, adb, params) != exp) *cp = false;
@@ -1015,11 +1015,11 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
       if(size >= sizeof(uint32_t) * 2){
         uint32_t nsiz;
         memcpy(&nsiz, rp, sizeof(nsiz));
-        nsiz = TTNTOHL(nsiz);
+        nsiz = ntohl(nsiz);
         rp += sizeof(nsiz);
         uint32_t anum;
         memcpy(&anum, rp, sizeof(anum));
-        anum = TTNTOHL(anum);
+        anum = ntohl(anum);
         rp += sizeof(anum);
         char *name = tcmemdup(rp, nsiz);
         rp += nsiz;
@@ -1027,7 +1027,7 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
         for(int i = 0; i < anum; i++){
           uint32_t esiz;
           memcpy(&esiz, rp, sizeof(esiz));
-          esiz = TTNTOHL(esiz);
+          esiz = ntohl(esiz);
           rp += sizeof(esiz);
           tclistpush(args, rp, esiz);
           rp += esiz;
@@ -1084,10 +1084,10 @@ bool tcreplopen(TCREPL *repl, const char *host, int port, uint64_t ts, uint32_t 
   unsigned char *wp = buf;
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDREPL;
-  uint64_t llnum = TTHTONLL(ts);
+  uint64_t llnum = htonll(ts);
   memcpy(wp, &llnum, sizeof(llnum));
   wp += sizeof(llnum);
-  uint32_t lnum = TTHTONL(sid);
+  uint32_t lnum = htonl(sid);
   memcpy(wp, &lnum, sizeof(lnum));
   wp += sizeof(lnum);
   repl->fd = fd;

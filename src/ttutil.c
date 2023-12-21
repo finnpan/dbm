@@ -15,7 +15,7 @@
 
 
 #include "ttutil.h"
-#include "ttconf.h"
+#include "conf.h"
 
 
 
@@ -360,20 +360,20 @@ bool ttsockprintf(TTSOCK *sock, const char *format, ...){
   va_start(ap, format);
   while(*format != '\0'){
     if(*format == '%'){
-      char cbuf[TTNUMBUFSIZ];
+      char cbuf[TCNUMBUFSIZ];
       cbuf[0] = '%';
       int cblen = 1;
       int lnum = 0;
       format++;
       while(strchr("0123456789 .+-hlLz", *format) && *format != '\0' &&
-            cblen < TTNUMBUFSIZ - 1){
+            cblen < TCNUMBUFSIZ - 1){
         if(*format == 'l' || *format == 'L') lnum++;
         cbuf[cblen++] = *(format++);
       }
       cbuf[cblen++] = *format;
       cbuf[cblen] = '\0';
       int tlen;
-      char *tmp, tbuf[TTNUMBUFSIZ*2];
+      char *tmp, tbuf[TCNUMBUFSIZ*2];
       switch(*format){
         case 's':
           tmp = va_arg(ap, char *);
@@ -575,7 +575,7 @@ uint32_t ttsockgetint32(TTSOCK *sock){
   assert(sock);
   uint32_t num;
   ttsockrecv(sock, (char *)&num, sizeof(num));
-  return TTNTOHL(num);
+  return ntohl(num);
 }
 
 
@@ -584,7 +584,7 @@ uint64_t ttsockgetint64(TTSOCK *sock){
   assert(sock);
   uint64_t num;
   ttsockrecv(sock, (char *)&num, sizeof(num));
-  return TTNTOHLL(num);
+  return ntohll(num);
 }
 
 
@@ -792,9 +792,9 @@ void ttpackdouble(double num, char *buf){
     linteg = INT64_MIN;
     lfract = INT64_MIN;
   }
-  linteg = TTHTONLL(linteg);
+  linteg = htonll(linteg);
   memcpy(buf, &linteg, sizeof(linteg));
-  lfract = TTHTONLL(lfract);
+  lfract = htonll(lfract);
   memcpy(buf + sizeof(linteg), &lfract, sizeof(lfract));
 }
 
@@ -804,9 +804,9 @@ double ttunpackdouble(const char *buf){
   assert(buf);
   int64_t linteg, lfract;
   memcpy(&linteg, buf, sizeof(linteg));
-  linteg = TTNTOHLL(linteg);
+  linteg = ntohll(linteg);
   memcpy(&lfract, buf + sizeof(linteg), sizeof(lfract));
-  lfract = TTNTOHLL(lfract);
+  lfract = ntohll(lfract);
   if(lfract == INT64_MIN && linteg == INT64_MIN){
     return NAN;
   } else if(linteg == INT64_MAX){

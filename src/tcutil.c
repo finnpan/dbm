@@ -15,7 +15,7 @@
 
 
 #include "tcutil.h"
-#include "tcconf.h"
+#include "conf.h"
 
 
 
@@ -4752,10 +4752,6 @@ uint64_t tcpagealign(uint64_t off){
 
 /* Initialize the global mutex object */
 static void tcglobalinit(void){
-  if(!TCUSEPTHREAD){
-    memset(&tcglobalmutex, 0, sizeof(tcglobalmutex));
-    memset(&tcpathmutex, 0, sizeof(tcpathmutex));
-  }
   if(pthread_rwlock_init(&tcglobalmutex, NULL) != 0) tcmyfatal("rwlock error");
   if(pthread_mutex_init(&tcpathmutex, NULL) != 0) tcmyfatal("mutex error");
   tcpathmap = tcmapnew2(TCMAPTINYBNUM);
@@ -5214,5 +5210,251 @@ static int tcgammadecode(const char *ptr, int size, char *obuf){
 }
 
 
+
+/*************************************************************************************************
+ * for ZLIB
+ *************************************************************************************************/
+#include <zlib.h>
+#define ZLIBBUFSIZ     8192
+static char *_tc_deflate_impl(const char *ptr, int size, int *sp, int mode);
+static char *_tc_inflate_impl(const char *ptr, int size, int *sp, int mode);
+static unsigned int _tc_getcrc_impl(const char *ptr, int size);
+
+char *(*_tc_deflate)(const char *, int, int *, int) = _tc_deflate_impl;
+char *(*_tc_inflate)(const char *, int, int *, int) = _tc_inflate_impl;
+unsigned int (*_tc_getcrc)(const char *, int) = _tc_getcrc_impl;
+char *(*_tc_bzcompress)(const char *, int, int *) = NULL;
+char *(*_tc_bzdecompress)(const char *, int, int *) = NULL;
+
+static char *_tc_deflate_impl(const char *ptr, int size, int *sp, int mode){
+  assert(ptr && size >= 0 && sp);
+  z_stream zs;
+  zs.zalloc = Z_NULL;
+  zs.zfree = Z_NULL;
+  zs.opaque = Z_NULL;
+  switch(mode){
+    case _TCZMRAW:
+      if(deflateInit2(&zs, 5, Z_DEFLATED, -15, 7, Z_DEFAULT_STRATEGY) != Z_OK)
+        return NULL;
+      break;
+    case _TCZMGZIP:
+      if(deflateInit2(&zs, 6, Z_DEFLATED, 15 + 16, 9, Z_DEFAULT_STRATEGY) != Z_OK)
+        return NULL;
+      break;
+    default:
+      if(deflateInit2(&zs, 6, Z_DEFLATED, 15, 8, Z_DEFAULT_STRATEGY) != Z_OK)
+        return NULL;
+      break;
+  }
+  int asiz = size + 16;
+  if(asiz < ZLIBBUFSIZ) asiz = ZLIBBUFSIZ;
+  char *buf;
+  if(!(buf = malloc(asiz))){
+    deflateEnd(&zs);
+    return NULL;
+  }
+  unsigned char obuf[ZLIBBUFSIZ];
+  int bsiz = 0;
+  zs.next_in = (unsigned char *)ptr;
+  zs.avail_in = size;
+  zs.next_out = obuf;
+  zs.avail_out = ZLIBBUFSIZ;
+  int rv;
+  while((rv = deflate(&zs, Z_FINISH)) == Z_OK){
+    int osiz = ZLIBBUFSIZ - zs.avail_out;
+    if(bsiz + osiz > asiz){
+      asiz = asiz * 2 + osiz;
+      char *swap;
+      if(!(swap = realloc(buf, asiz))){
+        free(buf);
+        deflateEnd(&zs);
+        return NULL;
+      }
+      buf = swap;
+    }
+    memcpy(buf + bsiz, obuf, osiz);
+    bsiz += osiz;
+    zs.next_out = obuf;
+    zs.avail_out = ZLIBBUFSIZ;
+  }
+  if(rv != Z_STREAM_END){
+    free(buf);
+    deflateEnd(&zs);
+    return NULL;
+  }
+  int osiz = ZLIBBUFSIZ - zs.avail_out;
+  if(bsiz + osiz + 1 > asiz){
+    asiz = asiz * 2 + osiz;
+    char *swap;
+    if(!(swap = realloc(buf, asiz))){
+      free(buf);
+      deflateEnd(&zs);
+      return NULL;
+    }
+    buf = swap;
+  }
+  memcpy(buf + bsiz, obuf, osiz);
+  bsiz += osiz;
+  buf[bsiz] = '\0';
+  if(mode == _TCZMRAW) bsiz++;
+  *sp = bsiz;
+  deflateEnd(&zs);
+  return buf;
+}
+
+static char *_tc_inflate_impl(const char *ptr, int size, int *sp, int mode){
+  assert(ptr && size >= 0 && sp);
+  z_stream zs;
+  zs.zalloc = Z_NULL;
+  zs.zfree = Z_NULL;
+  zs.opaque = Z_NULL;
+  switch(mode){
+    case _TCZMRAW:
+      if(inflateInit2(&zs, -15) != Z_OK) return NULL;
+      break;
+    case _TCZMGZIP:
+      if(inflateInit2(&zs, 15 + 16) != Z_OK) return NULL;
+      break;
+    default:
+      if(inflateInit2(&zs, 15) != Z_OK) return NULL;
+      break;
+  }
+  int asiz = size * 2 + 16;
+  if(asiz < ZLIBBUFSIZ) asiz = ZLIBBUFSIZ;
+  char *buf;
+  if(!(buf = malloc(asiz))){
+    inflateEnd(&zs);
+    return NULL;
+  }
+  unsigned char obuf[ZLIBBUFSIZ];
+  int bsiz = 0;
+  zs.next_in = (unsigned char *)ptr;
+  zs.avail_in = size;
+  zs.next_out = obuf;
+  zs.avail_out = ZLIBBUFSIZ;
+  int rv;
+  while((rv = inflate(&zs, Z_NO_FLUSH)) == Z_OK){
+    int osiz = ZLIBBUFSIZ - zs.avail_out;
+    if(bsiz + osiz >= asiz){
+      asiz = asiz * 2 + osiz;
+      char *swap;
+      if(!(swap = realloc(buf, asiz))){
+        free(buf);
+        inflateEnd(&zs);
+        return NULL;
+      }
+      buf = swap;
+    }
+    memcpy(buf + bsiz, obuf, osiz);
+    bsiz += osiz;
+    zs.next_out = obuf;
+    zs.avail_out = ZLIBBUFSIZ;
+  }
+  if(rv != Z_STREAM_END){
+    free(buf);
+    inflateEnd(&zs);
+    return NULL;
+  }
+  int osiz = ZLIBBUFSIZ - zs.avail_out;
+  if(bsiz + osiz >= asiz){
+    asiz = asiz * 2 + osiz;
+    char *swap;
+    if(!(swap = realloc(buf, asiz))){
+      free(buf);
+      inflateEnd(&zs);
+      return NULL;
+    }
+    buf = swap;
+  }
+  memcpy(buf + bsiz, obuf, osiz);
+  bsiz += osiz;
+  buf[bsiz] = '\0';
+  *sp = bsiz;
+  inflateEnd(&zs);
+  return buf;
+}
+
+static unsigned int _tc_getcrc_impl(const char *ptr, int size){
+  assert(ptr && size >= 0);
+  int crc = crc32(0, Z_NULL, 0);
+  return crc32(crc, (unsigned char *)ptr, size);
+}
+
+
+void tcsetvnumbuf32 (uint32_t TC_num, int* TC_len, char* TC_buf)
+{
+    int _TC_num = TC_num;
+    if(_TC_num == 0){
+      ((signed char *)(TC_buf))[0] = 0;
+      *TC_len = 1;
+    } else {
+      *TC_len = 0;
+      while(_TC_num > 0){
+        int _TC_rem = _TC_num & 0x7f;
+        _TC_num >>= 7;
+        if(_TC_num > 0){
+          ((signed char *)(TC_buf))[*TC_len] = -_TC_rem - 1;
+        } else {
+          ((signed char *)(TC_buf))[*TC_len] = _TC_rem;
+        }
+        (*TC_len)++;
+      }
+    }
+}
+
+void tcsetvnumbuf64 (uint64_t TC_num, int* TC_len, char* TC_buf)
+{
+    long long int _TC_num = TC_num;
+    if(_TC_num == 0){
+      ((signed char *)(TC_buf))[0] = 0;
+      *TC_len = 1;
+    } else {
+      *TC_len = 0;
+      while(_TC_num > 0){
+        int _TC_rem = _TC_num & 0x7f;
+        _TC_num >>= 7;
+        if(_TC_num > 0){
+          ((signed char *)(TC_buf))[*TC_len] = -_TC_rem - 1;
+        } else {
+          ((signed char *)(TC_buf))[*TC_len] = _TC_rem;
+        }
+        (*TC_len)++;
+      }
+    }
+}
+
+void tcreadvnumbuf32 (const char* TC_buf, int TC_step, uint32_t* TC_num)
+{
+    *TC_num = 0;
+    int _TC_base = 1;
+    int _TC_i = 0;
+    while(true){
+      if(((signed char *)(TC_buf))[_TC_i] >= 0){
+        *TC_num += ((signed char *)(TC_buf))[_TC_i] * _TC_base;
+        break;
+      }
+      *TC_num += _TC_base * (((signed char *)(TC_buf))[_TC_i] + 1) * -1;
+      _TC_base <<= 7;
+      _TC_i++;
+    }
+    TC_step = _TC_i + 1;
+}
+
+void tcreadvnumbuf64 (const char* TC_buf, int TC_step, uint64_t* TC_num)
+{
+    *TC_num = 0;
+    long long int _TC_base = 1;
+    int _TC_i = 0;
+    while(true){
+      if(((signed char *)(TC_buf))[_TC_i] >= 0){
+        *TC_num += ((signed char *)(TC_buf))[_TC_i] * _TC_base;
+        break;
+      }
+      *TC_num += _TC_base * (((signed char *)(TC_buf))[_TC_i] + 1) * -1;
+      _TC_base <<= 7;
+      _TC_i++;
+    }
+    TC_step = _TC_i + 1;
+}
 
 // END OF FILE

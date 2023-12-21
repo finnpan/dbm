@@ -17,7 +17,7 @@
 #include <ttutil.h>
 #include <tculog.h>
 #include <tcrdb.h>
-#include "ttconf.h"
+#include "conf.h"
 
 #define DEFTHNUM       8                 // default thread number
 #define DEFPIDPATH     "ttserver.pid"    // default name of the PID file
@@ -313,7 +313,7 @@ int main(int argc, char **argv){
         mask &= ~getcmdmask(argv[i]);
       } else if(!strcmp(argv[i], "--version")){
         printf("Tokyo Tyrant version %s (%d:%s) for %s\n",
-               ttversion, _TT_LIBVER, _TT_PROTVER, TTSYSNAME);
+               ttversion, _TT_LIBVER, _TT_PROTVER, TCSYSNAME);
         printf("Copyright (C) 2006-2010 FAL Labs\n");
         exit(0);
       } else {
@@ -1395,7 +1395,7 @@ static void do_get(TTSOCK *sock, TASKARG *arg, TTREQ *req){
       pthread_cleanup_push(free, (rbuf == stack) ? NULL : rbuf);
       *rbuf = 0;
       uint32_t num;
-      num = TTHTONL((uint32_t)vsiz);
+      num = htonl((uint32_t)vsiz);
       memcpy(rbuf + sizeof(uint8_t), &num, sizeof(uint32_t));
       memcpy(rbuf + sizeof(uint8_t) + sizeof(uint32_t), vbuf, vsiz);
       tcfree(vbuf);
@@ -1460,9 +1460,9 @@ static void do_mget(TTSOCK *sock, TASKARG *arg, TTREQ *req){
         int vsiz;
         char *vbuf = tcadbget(adb, kbuf, ksiz, &vsiz);
         if(vbuf){
-          num = TTHTONL((uint32_t)ksiz);
+          num = htonl((uint32_t)ksiz);
           tcxstrcat(xstr, &num, sizeof(num));
-          num = TTHTONL((uint32_t)vsiz);
+          num = htonl((uint32_t)vsiz);
           tcxstrcat(xstr, &num, sizeof(num));
           tcxstrcat(xstr, kbuf, ksiz);
           tcxstrcat(xstr, vbuf, vsiz);
@@ -1471,7 +1471,7 @@ static void do_mget(TTSOCK *sock, TASKARG *arg, TTREQ *req){
         }
       }
     }
-    num = TTHTONL((uint32_t)rnum);
+    num = htonl((uint32_t)rnum);
     memcpy((char *)tcxstrptr(xstr) + sizeof(code), &num, sizeof(num));
     if(ttsocksend(sock, tcxstrptr(xstr), tcxstrsize(xstr))){
       req->keep = true;
@@ -1511,7 +1511,7 @@ static void do_vsiz(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     if(vsiz >= 0){
       *stack = 0;
       uint32_t num;
-      num = TTHTONL((uint32_t)vsiz);
+      num = htonl((uint32_t)vsiz);
       memcpy(stack + sizeof(uint8_t), &num, sizeof(uint32_t));
       if(ttsocksend(sock, stack, sizeof(uint8_t) + sizeof(uint32_t))){
         req->keep = true;
@@ -1577,7 +1577,7 @@ static void do_iternext(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     pthread_cleanup_push(free, (rbuf == stack) ? NULL : rbuf);
     *rbuf = 0;
     uint32_t num;
-    num = TTHTONL((uint32_t)vsiz);
+    num = htonl((uint32_t)vsiz);
     memcpy(rbuf + sizeof(uint8_t), &num, sizeof(uint32_t));
     memcpy(rbuf + sizeof(uint8_t) + sizeof(uint32_t), vbuf, vsiz);
     tcfree(vbuf);
@@ -1629,13 +1629,13 @@ static void do_fwmkeys(TTSOCK *sock, TASKARG *arg, TTREQ *req){
       for(int i = 0; i < tclistnum(keys); i++){
         int ksiz;
         const char *kbuf = tclistval(keys, i, &ksiz);
-        num = TTHTONL((uint32_t)ksiz);
+        num = htonl((uint32_t)ksiz);
         tcxstrcat(xstr, &num, sizeof(num));
         tcxstrcat(xstr, kbuf, ksiz);
         knum++;
       }
     }
-    num = TTHTONL((uint32_t)knum);
+    num = htonl((uint32_t)knum);
     memcpy((char *)tcxstrptr(xstr) + sizeof(code), &num, sizeof(num));
     if(ttsocksend(sock, tcxstrptr(xstr), tcxstrsize(xstr))){
       req->keep = true;
@@ -1679,7 +1679,7 @@ static void do_addint(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     if(snum != INT_MIN){
       *stack = 0;
       uint32_t num;
-      num = TTHTONL((uint32_t)snum);
+      num = htonl((uint32_t)snum);
       memcpy(stack + sizeof(uint8_t), &num, sizeof(uint32_t));
       if(ttsocksend(sock, stack, sizeof(uint8_t) + sizeof(uint32_t))){
         req->keep = true;
@@ -1821,7 +1821,7 @@ static void do_ext(TTSOCK *sock, TASKARG *arg, TTREQ *req){
       pthread_cleanup_push(free, (rbuf == stack) ? NULL : rbuf);
       *rbuf = 0;
       uint32_t num;
-      num = TTHTONL((uint32_t)xsiz);
+      num = htonl((uint32_t)xsiz);
       memcpy(rbuf + sizeof(uint8_t), &num, sizeof(uint32_t));
       memcpy(rbuf + sizeof(uint8_t) + sizeof(uint32_t), xbuf, xsiz);
       tcfree(xbuf);
@@ -2065,7 +2065,7 @@ static void do_rnum(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   } else {
     rnum = tcadbrnum(adb);
   }
-  rnum = TTHTONLL(rnum);
+  rnum = htonll(rnum);
   memcpy(buf + sizeof(uint8_t), &rnum, sizeof(uint64_t));
   if(ttsocksend(sock, buf, sizeof(uint8_t) + sizeof(uint64_t))){
     req->keep = true;
@@ -2090,7 +2090,7 @@ static void do_size(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   } else {
     size = tcadbsize(adb);
   }
-  size = TTHTONLL(size);
+  size = htonll(size);
   memcpy(buf + sizeof(uint8_t), &size, sizeof(uint64_t));
   if(ttsocksend(sock, buf, sizeof(uint8_t) + sizeof(uint64_t))){
     req->keep = true;
@@ -2116,7 +2116,7 @@ static void do_stat(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     wp += sprintf(wp, "version\t%s\n", ttversion);
     wp += sprintf(wp, "libver\t%d\n", _TT_LIBVER);
     wp += sprintf(wp, "protver\t%s\n", _TT_PROTVER);
-    wp += sprintf(wp, "os\t%s\n", TTSYSNAME);
+    wp += sprintf(wp, "os\t%s\n", TCSYSNAME);
     wp += sprintf(wp, "time\t%.6f\n", now);
     wp += sprintf(wp, "pid\t%lld\n", (long long)getpid());
     wp += sprintf(wp, "sid\t%d\n", arg->sid);
@@ -2149,7 +2149,7 @@ static void do_stat(TTSOCK *sock, TASKARG *arg, TTREQ *req){
       tclistdel(res);
     }
     pthread_cleanup_pop(1);
-    wp += sprintf(wp, "bigend\t%d\n", TTBIGEND);
+    wp += sprintf(wp, "bigend\t%d\n", TCBIGEND);
     if(sarg->host[0] != '\0'){
       wp += sprintf(wp, "mhost\t%s\n", sarg->host);
       wp += sprintf(wp, "mport\t%d\n", sarg->port);
@@ -2204,7 +2204,7 @@ static void do_stat(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   wp += sprintf(wp, "cnt_get_miss\t%llu\n", (unsigned long long)sumstat(arg, TTSEQGETMISS));
   *buf = 0;
   uint32_t size = wp - buf - (sizeof(uint8_t) + sizeof(uint32_t));
-  size = TTHTONL(size);
+  size = htonl(size);
   memcpy(buf + sizeof(uint8_t), &size, sizeof(uint32_t));
   if(ttsocksend(sock, buf, wp - buf)){
     req->keep = true;
@@ -2263,7 +2263,7 @@ static void do_misc(TTSOCK *sock, TASKARG *arg, TTREQ *req){
         for(int i = 0; i < tclistnum(res); i++){
           int esiz;
           const char *ebuf = tclistval(res, i, &esiz);
-          num = TTHTONL((uint32_t)esiz);
+          num = htonl((uint32_t)esiz);
           tcxstrcat(xstr, &num, sizeof(num));
           tcxstrcat(xstr, ebuf, esiz);
           rnum++;
@@ -2273,7 +2273,7 @@ static void do_misc(TTSOCK *sock, TASKARG *arg, TTREQ *req){
         *(uint8_t *)tcxstrptr(xstr) = 1;
       }
     }
-    num = TTHTONL((uint32_t)rnum);
+    num = htonl((uint32_t)rnum);
     memcpy((char *)tcxstrptr(xstr) + sizeof(code), &num, sizeof(num));
     if(ttsocksend(sock, tcxstrptr(xstr), tcxstrsize(xstr))){
       req->keep = true;
@@ -2308,7 +2308,7 @@ static void do_repl(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     ttservlog(g_serv, TTLOGINFO, "do_repl: rejected circular replication");
     return;
   }
-  uint32_t lnum = TTHTONL(arg->sid);
+  uint32_t lnum = htonl(arg->sid);
   if(!ttsocksend(sock, &lnum, sizeof(lnum))){
     ttservlog(g_serv, TTLOGINFO, "do_repl: response failed");
     return;
@@ -2359,13 +2359,13 @@ static void do_repl(TTSOCK *sock, TASKARG *arg, TTREQ *req){
         pthread_cleanup_push(free, (mbuf == stack) ? NULL : mbuf);
         unsigned char *wp = (unsigned char *)mbuf;
         *(wp++) = TCULMAGICNUM;
-        uint64_t llnum = TTHTONLL(rts);
+        uint64_t llnum = htonll(rts);
         memcpy(wp, &llnum, sizeof(llnum));
         wp += sizeof(llnum);
-        lnum = TTHTONL(rsid);
+        lnum = htonl(rsid);
         memcpy(wp, &lnum, sizeof(lnum));
         wp += sizeof(lnum);
-        lnum = TTHTONL(rsiz);
+        lnum = htonl(rsiz);
         memcpy(wp, &lnum, sizeof(lnum));
         wp += sizeof(lnum);
         memcpy(wp, rbuf, rsiz);
@@ -3497,7 +3497,7 @@ static void do_http_options(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, con
     tcxstrprintf(xstr, "X-TT-VERSION: %s\r\n", ttversion);
     tcxstrprintf(xstr, "X-TT-LIBVER: %d\r\n", _TT_LIBVER);
     tcxstrprintf(xstr, "X-TT-PROTVER: %s\r\n", _TT_PROTVER);
-    tcxstrprintf(xstr, "X-TT-OS: %s\r\n", TTSYSNAME);
+    tcxstrprintf(xstr, "X-TT-OS: %s\r\n", TCSYSNAME);
     tcxstrprintf(xstr, "X-TT-TIME: %.6f\r\n", now);
     tcxstrprintf(xstr, "X-TT-PID: %lld\r\n", (long long)getpid());
     tcxstrprintf(xstr, "X-TT-SID: %d\r\n", arg->sid);
@@ -3511,7 +3511,7 @@ static void do_http_options(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, con
     if(path) tcxstrprintf(xstr, "X-TT-PATH: %s\r\n", path);
     tcxstrprintf(xstr, "X-TT-RNUM: %llu\r\n", (unsigned long long)tcadbrnum(adb));
     tcxstrprintf(xstr, "X-TT-SIZE: %llu\r\n", (unsigned long long)tcadbsize(adb));
-    tcxstrprintf(xstr, "X-TT-BIGEND: %d\r\n", TTBIGEND);
+    tcxstrprintf(xstr, "X-TT-BIGEND: %d\r\n", TCBIGEND);
     if(sarg->host[0] != '\0'){
       tcxstrprintf(xstr, "X-TT-MHOST: %s\r\n", sarg->host);
       tcxstrprintf(xstr, "X-TT-MPORT: %d\r\n", sarg->port);

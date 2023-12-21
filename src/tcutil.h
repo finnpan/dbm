@@ -1802,12 +1802,12 @@ uint64_t tcpagealign(uint64_t off);
 #if defined(_MYFASTEST)
 #define TCMALLOC(TC_res, TC_size) \
   do { \
-    (TC_res) = MYMALLOC(TC_size); \
+    (TC_res) = malloc(TC_size); \
   } while(false)
 #else
 #define TCMALLOC(TC_res, TC_size) \
   do { \
-    if(!((TC_res) = MYMALLOC(TC_size))) tcmyfatal("out of memory"); \
+    if(!((TC_res) = malloc(TC_size))) tcmyfatal("out of memory"); \
   } while(false)
 #endif
 
@@ -1816,12 +1816,12 @@ uint64_t tcpagealign(uint64_t off);
 #if defined(_MYFASTEST)
 #define TCCALLOC(TC_res, TC_nmemb, TC_size) \
   do { \
-    (TC_res) = MYCALLOC((TC_nmemb), (TC_size)); \
+    (TC_res) = calloc((TC_nmemb), (TC_size)); \
   } while(false)
 #else
 #define TCCALLOC(TC_res, TC_nmemb, TC_size) \
   do { \
-    if(!((TC_res) = MYCALLOC((TC_nmemb), (TC_size)))) tcmyfatal("out of memory"); \
+    if(!((TC_res) = calloc((TC_nmemb), (TC_size)))) tcmyfatal("out of memory"); \
   } while(false)
 #endif
 
@@ -1830,12 +1830,12 @@ uint64_t tcpagealign(uint64_t off);
 #if defined(_MYFASTEST)
 #define TCREALLOC(TC_res, TC_ptr, TC_size) \
   do { \
-    (TC_res) = MYREALLOC((TC_ptr), (TC_size)); \
+    (TC_res) = realloc((TC_ptr), (TC_size)); \
   } while(false)
 #else
 #define TCREALLOC(TC_res, TC_ptr, TC_size) \
   do { \
-    if(!((TC_res) = MYREALLOC((TC_ptr), (TC_size)))) tcmyfatal("out of memory"); \
+    if(!((TC_res) = realloc((TC_ptr), (TC_size)))) tcmyfatal("out of memory"); \
   } while(false)
 #endif
 
@@ -1852,7 +1852,7 @@ uint64_t tcpagealign(uint64_t off);
 /* Alias of `tcfree'. */
 #define TCFREE(TC_ptr) \
   do { \
-    MYFREE(TC_ptr); \
+    free(TC_ptr); \
   } while(false)
 
 
@@ -1940,6 +1940,29 @@ typedef union { int32_t i; int64_t l; double d; void *p; TCCMP f; } tcgeneric_t;
 /* Alias of `tcmaprnum'. */
 #define TCMAPRNUM(TC_map) \
   ((TC_map)->rnum)
+
+
+/*************************************************************************************************
+ * for ZLIB
+ *************************************************************************************************/
+enum {
+  _TCZMZLIB,
+  _TCZMRAW,
+  _TCZMGZIP
+};
+extern char *(*_tc_deflate)(const char *, int, int *, int);
+extern char *(*_tc_inflate)(const char *, int, int *, int);
+extern unsigned int (*_tc_getcrc)(const char *, int);
+extern char *(*_tc_bzcompress)(const char *, int, int *);
+extern char *(*_tc_bzdecompress)(const char *, int, int *);
+
+
+/* set a buffer for a variable length number */
+void tcsetvnumbuf32 (uint32_t TC_num, int* TC_len, char* TC_buf);
+void tcsetvnumbuf64 (uint64_t TC_num, int* TC_len, char* TC_buf);
+/* read a variable length buffer */
+void tcreadvnumbuf32 (const char* TC_buf, int TC_step, uint32_t* TC_num);
+void tcreadvnumbuf64 (const char* TC_buf, int TC_step, uint64_t* TC_num);
 
 
 __TCUTIL_CLINKAGEEND

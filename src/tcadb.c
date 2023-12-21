@@ -17,7 +17,7 @@
 #include "tcutil.h"
 #include "tchdb.h"
 #include "tcadb.h"
-#include "tcconf.h"
+#include "conf.h"
 
 #define ADBDIRMODE     00755             // permission of created directories
 #define ADBMULPREFIX   "adbmul-"         // prefix of multiple database files

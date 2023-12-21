@@ -16,7 +16,7 @@
 
 #include "tcutil.h"
 #include "tchdb.h"
-#include "tcconf.h"
+#include "conf.h"
 
 #define HDBFILEMODE    00644             // permission of created files
 #define HDBIOBUFSIZ    8192              // size of an I/O buffer
@@ -249,7 +249,6 @@ int tchdbecode(TCHDB *hdb){
 /* Set mutual exclusion control of a hash database object for threading. */
 bool tchdbsetmutex(TCHDB *hdb){
   assert(hdb);
-  if(!TCUSEPTHREAD) return true;
   if(hdb->mmtx || hdb->fd >= 0){
     tchdbsetecode(hdb, TCEINVALID, __FILE__, __LINE__, __func__);
     return false;
@@ -1562,21 +1561,6 @@ static bool tchdbseekwrite(TCHDB *hdb, off_t off, const void *buf, size_t size){
     memcpy(hdb->map + off, buf, size);
     return true;
   }
-  if(!TCUBCACHE && off < hdb->xmsiz){
-    if(end >= hdb->fsiz && end >= hdb->xfsiz){
-      uint64_t xfsiz = end + HDBXFSIZINC;
-      if(ftruncate(hdb->fd, xfsiz) == -1){
-        tchdbsetecode(hdb, TCETRUNC, __FILE__, __LINE__, __func__);
-        return false;
-      }
-      hdb->xfsiz = xfsiz;
-    }
-    int head = hdb->xmsiz - off;
-    memcpy(hdb->map + off, buf, head);
-    off += head;
-    buf = (char *)buf + head;
-    size -= head;
-  }
   while(true){
     int wb = pwrite(hdb->fd, buf, size, off);
     if(wb >= size){
@@ -1612,13 +1596,6 @@ static bool tchdbseekread(TCHDB *hdb, off_t off, void *buf, size_t size){
   if(off + size <= hdb->xmsiz){
     memcpy(buf, hdb->map + off, size);
     return true;
-  }
-  if(!TCUBCACHE && off < hdb->xmsiz){
-    int head = hdb->xmsiz - off;
-    memcpy(buf, hdb->map + off, head);
-    off += head;
-    buf = (char *)buf + head;
-    size -= head;
   }
   while(true){
     int rb = pread(hdb->fd, buf, size, off);
@@ -1657,13 +1634,6 @@ static bool tchdbseekreadtry(TCHDB *hdb, off_t off, void *buf, size_t size){
   if(end <= hdb->xmsiz){
     memcpy(buf, hdb->map + off, size);
     return true;
-  }
-  if(!TCUBCACHE && off < hdb->xmsiz){
-    int head = hdb->xmsiz - off;
-    memcpy(buf, hdb->map + off, head);
-    off += head;
-    buf = (char *)buf + head;
-    size -= head;
   }
   int rb = pread(hdb->fd, buf, size, off);
   if(rb == size) return true;
@@ -1915,11 +1885,11 @@ static bool tchdbsavefbp(TCHDB *hdb){
     uint64_t noff = cur->off >> hdb->apow;
     int step;
     uint64_t llnum = noff - base;
-    TCSETVNUMBUF64(step, wp, llnum);
+    tcsetvnumbuf64(llnum, &step, wp);
     wp += step;
     bsiz -= step;
     uint32_t lnum = cur->rsiz >> hdb->apow;
-    TCSETVNUMBUF(step, wp, lnum);
+    tcsetvnumbuf32(lnum, &step, wp);
     wp += step;
     bsiz -= step;
     base = noff;
@@ -1951,14 +1921,14 @@ static bool tchdbloadfbp(TCHDB *hdb){
   HDBFB *end = cur + hdb->fbpmax * HDBFBPALWRAT;
   uint64_t base = 0;
   while(cur < end && *rp != '\0'){
-    int step;
+    int step = 0;
     uint64_t llnum;
-    TCREADVNUMBUF64(rp, llnum, step);
+    tcreadvnumbuf64(rp, step, &llnum);
     base += llnum << hdb->apow;
     cur->off = base;
     rp += step;
     uint32_t lnum;
-    TCREADVNUMBUF(rp, lnum, step);
+    tcreadvnumbuf32(rp, step, &lnum);
     cur->rsiz = lnum << hdb->apow;
     rp += step;
     cur++;
@@ -2370,9 +2340,9 @@ static bool tchdbwriterec(TCHDB *hdb, TCHREC *rec, uint64_t bidx, off_t entoff){
   char *pwp = wp;
   wp += sizeof(snum);
   int step;
-  TCSETVNUMBUF(step, wp, rec->ksiz);
+  tcsetvnumbuf32(rec->ksiz, &step, wp);
   wp += step;
-  TCSETVNUMBUF(step, wp, rec->vsiz);
+  tcsetvnumbuf32(rec->vsiz, &step, wp);
   wp += step;
   int32_t hsiz = wp - rbuf;
   int32_t rsiz = hsiz + rec->ksiz + rec->vsiz;
@@ -2527,11 +2497,11 @@ static bool tchdbreadrec(TCHDB *hdb, TCHREC *rec, char *rbuf){
   rec->psiz = TCITOHS(snum);
   rp += sizeof(snum);
   uint32_t lnum;
-  int step;
-  TCREADVNUMBUF(rp, lnum, step);
+  int step = 0;
+  tcreadvnumbuf32(rp, step, &lnum);
   rec->ksiz = lnum;
   rp += step;
-  TCREADVNUMBUF(rp, lnum, step);
+  tcreadvnumbuf32(rp, step, &lnum);
   rec->vsiz = lnum;
   rp += step;
   int32_t hsiz = rp - rbuf;
@@ -2943,8 +2913,6 @@ static int tchdbwalrestore(TCHDB *hdb, const char *path){
       if(buf != stack) TCFREE(buf);
       waloff += sizeof(off) + sizeof(size) + size;
     }
-    size_t xmsiz = 0;
-    if(hdb->fd >= 0 && hdb->map) xmsiz = (hdb->xmsiz > hdb->msiz) ? hdb->xmsiz : hdb->msiz;
     for(int i = TCLISTNUM(list) - 1; i >= 0; i--){
       const char *rec;
       int size;
@@ -2961,10 +2929,6 @@ static int tchdbwalrestore(TCHDB *hdb, const char *path){
         tchdbsetecode(hdb, TCEWRITE, __FILE__, __LINE__, __func__);
         err = true;
         break;
-      }
-      if(!TCUBCACHE && off < xmsiz){
-        size = (size <= xmsiz - off) ? size : xmsiz - off;
-        memcpy(hdb->map + off, rec, size);
       }
     }
     tclistdel(list);
@@ -3491,9 +3455,9 @@ static void tchdbdrpappend(TCHDB *hdb, const char *kbuf, int ksiz, const char *v
   char *pwp = wp;
   wp += sizeof(snum);
   int step;
-  TCSETVNUMBUF(step, wp, ksiz);
+  tcsetvnumbuf32(ksiz, &step, wp);
   wp += step;
-  TCSETVNUMBUF(step, wp, vsiz);
+  tcsetvnumbuf32(vsiz, &step, wp);
   wp += step;
   int32_t hsiz = wp - rbuf;
   int32_t rsiz = hsiz + ksiz + vsiz;
@@ -4474,7 +4438,6 @@ static bool tchdblockmethod(TCHDB *hdb, bool wr){
     tchdbsetecode(hdb, TCETHREAD, __FILE__, __LINE__, __func__);
     return false;
   }
-  TCTESTYIELD();
   return true;
 }
 
@@ -4488,7 +4451,6 @@ static bool tchdbunlockmethod(TCHDB *hdb){
     tchdbsetecode(hdb, TCETHREAD, __FILE__, __LINE__, __func__);
     return false;
   }
-  TCTESTYIELD();
   return true;
 }
 
@@ -4505,7 +4467,6 @@ static bool tchdblockrecord(TCHDB *hdb, uint8_t bidx, bool wr){
     tchdbsetecode(hdb, TCETHREAD, __FILE__, __LINE__, __func__);
     return false;
   }
-  TCTESTYIELD();
   return true;
 }
 
@@ -4520,7 +4481,6 @@ static bool tchdbunlockrecord(TCHDB *hdb, uint8_t bidx){
     tchdbsetecode(hdb, TCETHREAD, __FILE__, __LINE__, __func__);
     return false;
   }
-  TCTESTYIELD();
   return true;
 }
 
@@ -4541,7 +4501,6 @@ static bool tchdblockallrecords(TCHDB *hdb, bool wr){
       return false;
     }
   }
-  TCTESTYIELD();
   return true;
 }
 
@@ -4555,7 +4514,6 @@ static bool tchdbunlockallrecords(TCHDB *hdb){
   for(int i = UINT8_MAX; i >= 0; i--){
     if(pthread_rwlock_unlock((pthread_rwlock_t *)hdb->rmtxs + i)) err = true;
   }
-  TCTESTYIELD();
   if(err){
     tchdbsetecode(hdb, TCETHREAD, __FILE__, __LINE__, __func__);
     return false;
@@ -4573,7 +4531,6 @@ static bool tchdblockdb(TCHDB *hdb){
     tchdbsetecode(hdb, TCETHREAD, __FILE__, __LINE__, __func__);
     return false;
   }
-  TCTESTYIELD();
   return true;
 }
 
@@ -4587,7 +4544,6 @@ static bool tchdbunlockdb(TCHDB *hdb){
     tchdbsetecode(hdb, TCETHREAD, __FILE__, __LINE__, __func__);
     return false;
   }
-  TCTESTYIELD();
   return true;
 }
 
@@ -4601,7 +4557,6 @@ static bool tchdblockwal(TCHDB *hdb){
     tchdbsetecode(hdb, TCETHREAD, __FILE__, __LINE__, __func__);
     return false;
   }
-  TCTESTYIELD();
   return true;
 }
 
@@ -4615,7 +4570,6 @@ static bool tchdbunlockwal(TCHDB *hdb){
     tchdbsetecode(hdb, TCETHREAD, __FILE__, __LINE__, __func__);
     return false;
   }
-  TCTESTYIELD();
   return true;
 }
 

@@ -18,7 +18,7 @@
 #include "tcadb.h"
 #include "ttutil.h"
 #include "tcrdb.h"
-#include "ttconf.h"
+#include "conf.h"
 
 #define RDBRECONWAIT   0.1               // wait time to reconnect
 #define RDBNUMCOLMAX   16                // maximum number of columns of the long double
@@ -739,10 +739,10 @@ static bool tcrdbputimpl(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbu
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDPUT;
   uint32_t num;
-  num = TTHTONL((uint32_t)ksiz);
+  num = htonl((uint32_t)ksiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
-  num = TTHTONL((uint32_t)vsiz);
+  num = htonl((uint32_t)vsiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, kbuf, ksiz);
@@ -788,10 +788,10 @@ static bool tcrdbputkeepimpl(TCRDB *rdb, const void *kbuf, int ksiz, const void 
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDPUTKEEP;
   uint32_t num;
-  num = TTHTONL((uint32_t)ksiz);
+  num = htonl((uint32_t)ksiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
-  num = TTHTONL((uint32_t)vsiz);
+  num = htonl((uint32_t)vsiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, kbuf, ksiz);
@@ -837,10 +837,10 @@ static bool tcrdbputcatimpl(TCRDB *rdb, const void *kbuf, int ksiz, const void *
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDPUTCAT;
   uint32_t num;
-  num = TTHTONL((uint32_t)ksiz);
+  num = htonl((uint32_t)ksiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
-  num = TTHTONL((uint32_t)vsiz);
+  num = htonl((uint32_t)vsiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, kbuf, ksiz);
@@ -888,13 +888,13 @@ static bool tcrdbputshlimpl(TCRDB *rdb, const void *kbuf, int ksiz, const void *
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDPUTSHL;
   uint32_t num;
-  num = TTHTONL((uint32_t)ksiz);
+  num = htonl((uint32_t)ksiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
-  num = TTHTONL((uint32_t)vsiz);
+  num = htonl((uint32_t)vsiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
-  num = TTHTONL((uint32_t)width);
+  num = htonl((uint32_t)width);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, kbuf, ksiz);
@@ -940,10 +940,10 @@ static bool tcrdbputnrimpl(TCRDB *rdb, const void *kbuf, int ksiz, const void *v
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDPUTNR;
   uint32_t num;
-  num = TTHTONL((uint32_t)ksiz);
+  num = htonl((uint32_t)ksiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
-  num = TTHTONL((uint32_t)vsiz);
+  num = htonl((uint32_t)vsiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, kbuf, ksiz);
@@ -979,7 +979,7 @@ static bool tcrdboutimpl(TCRDB *rdb, const void *kbuf, int ksiz){
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDOUT;
   uint32_t num;
-  num = TTHTONL((uint32_t)ksiz);
+  num = htonl((uint32_t)ksiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, kbuf, ksiz);
@@ -1024,7 +1024,7 @@ static void *tcrdbgetimpl(TCRDB *rdb, const void *kbuf, int ksiz, int *sp){
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDGET;
   uint32_t num;
-  num = TTHTONL((uint32_t)ksiz);
+  num = htonl((uint32_t)ksiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, kbuf, ksiz);
@@ -1077,13 +1077,13 @@ static bool tcrdbmgetimpl(TCRDB *rdb, TCMAP *recs){
   tcxstrcat(xstr, magic, sizeof(magic));
   uint32_t num;
   num = (uint32_t)tcmaprnum(recs);
-  num = TTHTONL(num);
+  num = htonl(num);
   tcxstrcat(xstr, &num, sizeof(num));
   tcmapiterinit(recs);
   const char *kbuf;
   int ksiz;
   while((kbuf = tcmapiternext(recs, &ksiz)) != NULL){
-    num = TTHTONL((uint32_t)ksiz);
+    num = htonl((uint32_t)ksiz);
     tcxstrcat(xstr, &num, sizeof(num));
     tcxstrcat(xstr, kbuf, ksiz);
   }
@@ -1152,7 +1152,7 @@ static int tcrdbvsizimpl(TCRDB *rdb, const void *kbuf, int ksiz){
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDVSIZ;
   uint32_t num;
-  num = TTHTONL((uint32_t)ksiz);
+  num = htonl((uint32_t)ksiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, kbuf, ksiz);
@@ -1274,10 +1274,10 @@ static TCLIST *tcrdbfwmkeysimpl(TCRDB *rdb, const void *pbuf, int psiz, int max)
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDFWMKEYS;
   uint32_t num;
-  num = TTHTONL((uint32_t)psiz);
+  num = htonl((uint32_t)psiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
-  num = TTHTONL((uint32_t)max);
+  num = htonl((uint32_t)max);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, pbuf, psiz);
@@ -1337,10 +1337,10 @@ static int tcrdbaddintimpl(TCRDB *rdb, const void *kbuf, int ksiz, int num){
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDADDINT;
   uint32_t lnum;
-  lnum = TTHTONL((uint32_t)ksiz);
+  lnum = htonl((uint32_t)ksiz);
   memcpy(wp, &lnum, sizeof(uint32_t));
   wp += sizeof(uint32_t);
-  lnum = TTHTONL((uint32_t)num);
+  lnum = htonl((uint32_t)num);
   memcpy(wp, &lnum, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, kbuf, ksiz);
@@ -1386,7 +1386,7 @@ static double tcrdbadddoubleimpl(TCRDB *rdb, const void *kbuf, int ksiz, double 
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDADDDOUBLE;
   uint32_t lnum;
-  lnum = TTHTONL((uint32_t)ksiz);
+  lnum = htonl((uint32_t)ksiz);
   memcpy(wp, &lnum, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   char dbuf[sizeof(uint64_t)*2];
@@ -1442,16 +1442,16 @@ static void *tcrdbextimpl(TCRDB *rdb, const char *name, int opts,
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDEXT;
   uint32_t num;
-  num = TTHTONL((uint32_t)nsiz);
+  num = htonl((uint32_t)nsiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
-  num = TTHTONL((uint32_t)opts);
+  num = htonl((uint32_t)opts);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
-  num = TTHTONL((uint32_t)ksiz);
+  num = htonl((uint32_t)ksiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
-  num = TTHTONL((uint32_t)vsiz);
+  num = htonl((uint32_t)vsiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, name, nsiz);
@@ -1539,7 +1539,7 @@ static bool tcrdboptimizeimpl(TCRDB *rdb, const char *params){
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDOPTIMIZE;
   uint32_t num;
-  num = TTHTONL((uint32_t)psiz);
+  num = htonl((uint32_t)psiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, params, psiz);
@@ -1611,7 +1611,7 @@ static bool tcrdbcopyimpl(TCRDB *rdb, const char *path){
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDCOPY;
   uint32_t num;
-  num = TTHTONL((uint32_t)psiz);
+  num = htonl((uint32_t)psiz);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, path, psiz);
@@ -1654,13 +1654,13 @@ static bool tcrdbrestoreimpl(TCRDB *rdb, const char *path, uint64_t ts, int opts
   unsigned char *wp = buf;
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDRESTORE;
-  uint32_t lnum = TTHTONL((uint32_t)psiz);
+  uint32_t lnum = htonl((uint32_t)psiz);
   memcpy(wp, &lnum, sizeof(uint32_t));
   wp += sizeof(uint32_t);
-  uint64_t llnum = TTHTONLL(ts);
+  uint64_t llnum = htonll(ts);
   memcpy(wp, &llnum, sizeof(uint64_t));
   wp += sizeof(uint64_t);
-  lnum = TTHTONL((uint32_t)opts);
+  lnum = htonl((uint32_t)opts);
   memcpy(wp, &lnum, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, path, psiz);
@@ -1707,17 +1707,17 @@ static bool tcrdbsetmstimpl(TCRDB *rdb, const char *host, int port, uint64_t ts,
   *(wp++) = TTMAGICNUM;
   *(wp++) = TTCMDSETMST;
   uint32_t lnum;
-  lnum = TTHTONL((uint32_t)hsiz);
+  lnum = htonl((uint32_t)hsiz);
   memcpy(wp, &lnum, sizeof(uint32_t));
   wp += sizeof(uint32_t);
-  lnum = TTHTONL((uint32_t)port);
+  lnum = htonl((uint32_t)port);
   memcpy(wp, &lnum, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   uint64_t llnum;
-  llnum = TTHTONLL(ts);
+  llnum = htonll(ts);
   memcpy(wp, &llnum, sizeof(uint64_t));
   wp += sizeof(uint64_t);
-  lnum = TTHTONL((uint32_t)opts);
+  lnum = htonl((uint32_t)opts);
   memcpy(wp, &lnum, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, host, hsiz);
@@ -1882,18 +1882,18 @@ static TCLIST *tcrdbmiscimpl(TCRDB *rdb, const char *name, int opts, const TCLIS
   tcxstrcat(xstr, magic, sizeof(magic));
   int nsiz = strlen(name);
   uint32_t num;
-  num = TTHTONL((uint32_t)nsiz);
+  num = htonl((uint32_t)nsiz);
   tcxstrcat(xstr, &num, sizeof(num));
-  num = TTHTONL((uint32_t)opts);
+  num = htonl((uint32_t)opts);
   tcxstrcat(xstr, &num, sizeof(num));
   num = tclistnum(args);
-  num = TTHTONL(num);
+  num = htonl(num);
   tcxstrcat(xstr, &num, sizeof(num));
   tcxstrcat(xstr, name, nsiz);
   for(int i = 0; i < tclistnum(args); i++){
     int rsiz;
     const char *rbuf = tclistval(args, i, &rsiz);
-    num = TTHTONL((uint32_t)rsiz);
+    num = htonl((uint32_t)rsiz);
     tcxstrcat(xstr, &num, sizeof(num));
     tcxstrcat(xstr, rbuf, rsiz);
   }

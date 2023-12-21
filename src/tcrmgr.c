@@ -16,7 +16,7 @@
 
 #include <tculog.h>
 #include <tcrdb.h>
-#include "ttconf.h"
+#include "conf.h"
 
 #define REQHEADMAX     32                // maximum number of request headers of HTTP
 #define MINIBNUM       31                // bucket number of map for trivial use
@@ -1504,16 +1504,16 @@ static int procrepl(const char *host, int port, uint64_t ts, uint32_t sid, bool 
         char *mbuf = (msiz < TTIOBUFSIZ) ? stack : tcmalloc(msiz);
         unsigned char *wp = (unsigned char *)mbuf;
         *(wp++) = TCULMAGICNUM;
-        uint64_t llnum = TTHTONLL(rts);
+        uint64_t llnum = htonll(rts);
         memcpy(wp, &llnum, sizeof(llnum));
         wp += sizeof(llnum);
-        uint16_t snum = TTHTONS(rsid);
+        uint16_t snum = htons(rsid);
         memcpy(wp, &snum, sizeof(snum));
         wp += sizeof(snum);
-        snum = TTHTONS(repl->mid);
+        snum = htons(repl->mid);
         memcpy(wp, &snum, sizeof(snum));
         wp += sizeof(snum);
-        uint32_t lnum = TTHTONL(rsiz);
+        uint32_t lnum = htonl(rsiz);
         memcpy(wp, &lnum, sizeof(lnum));
         wp += sizeof(lnum);
         memcpy(wp, rbuf, rsiz);
@@ -1573,7 +1573,7 @@ static int prochttp(const char *url, TCMAP *hmap, bool ih){
 /* perform version command */
 static int procversion(void){
   printf("Tokyo Tyrant version %s (%d:%s) for %s\n",
-         ttversion, _TT_LIBVER, _TT_PROTVER, TTSYSNAME);
+         ttversion, _TT_LIBVER, _TT_PROTVER, TCSYSNAME);
   printf("Copyright (C) 2007-2010 Mikio Hirabayashi\n");
   return 0;
 }

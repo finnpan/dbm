@@ -15,7 +15,7 @@
 
 
 #include <tculog.h>
-#include "ttconf.h"
+#include "conf.h"
 
 #define RECBUFSIZ      32                // buffer for records
 

@@ -1,13 +1,13 @@
-LIBRARYFILES = libtc.a libtc.so tcddb.so libtt.a libtt.so
-LIBOBJFILES = tcutil.o tchdb.o tcadb.o tcconf.o ttutil.o tculog.o tcrdb.o ttconf.o
+LIBRARYFILES = libdbm.a libdbm.so tcddb.so
+LIBOBJFILES = tcutil.o tchdb.o tcadb.o ttutil.o tculog.o tcrdb.o
 COMMANDFILES = ttserver tculmgr tcrmgr
 
 CC = gcc
-CPPFLAGS = -I. -DNDEBUG -D_GNU_SOURCE=1 -D_REENTRANT -D__EXTENSIONS__
-CFLAGS = -g -O2 -std=c99 -Wall -fPIC -fsigned-char -O2
+CPPFLAGS = -I. -DNDEBUG -D_GNU_SOURCE=1 -D_REENTRANT
+CFLAGS = -g -O2 -std=c99 -Wall -fPIC -fsigned-char
 LDFLAGS = -L.
-LIBS_tc = -lbz2 -lz -lrt -lpthread -lm -lc
-LIBS_tt = -ltc -lbz2 -lz -lresolv -lnsl -ldl -lrt -lpthread -lm -lc
+LIBS = -lz -ldl -lrt -lpthread -lm
+CMDLIBS = -ldbm
 LDENV = LD_RUN_PATH=/lib:/usr/lib:/usr/local/lib:.
 RUNENV = LD_LIBRARY_PATH=/lib:/usr/lib:/usr/local/lib:.
 
@@ -64,54 +64,44 @@ check :
 
 
 
-libtc.a : $(LIBOBJFILES)
+libdbm.a : $(LIBOBJFILES)
 	$(AR) $(ARFLAGS) $@ $(LIBOBJFILES)
 
 
-libtc.so : $(LIBOBJFILES)
-	$(CC) $(CFLAGS) -shared -o $@ $(LIBOBJFILES) $(LDFLAGS) $(LIBS_tc)
+libdbm.so : $(LIBOBJFILES)
+	$(CC) $(CFLAGS) -shared -o $@ $(LIBOBJFILES) $(LDFLAGS) $(LIBS)
 
 
-tcddb.so : tcddb.o
-	$(CC) $(CFLAGS) -shared -o $@ $< $(LDFLAGS) $(LIBS_tc)
-
-
-tcconf.o : tcconf.h
-
-tcutil.o : tcconf.h tcutil.h
-
-tchdb.o : tcconf.h tcutil.h tchdb.h
-
-tcadb.o : tcconf.h tcutil.h tchdb.h tcadb.h
-
-
-
-libtt.a : $(LIBOBJFILES)
-	$(AR) $(ARFLAGS) $@ $(LIBOBJFILES)
-
-
-libtt.so : $(LIBOBJFILES)
-	$(CC) $(CFLAGS) -shared -o $@ $(LIBOBJFILES) $(LDFLAGS) $(LIBS_tt)
+tcddb.so : tcddb.o $(LIBOBJFILES)
+	$(CC) $(CFLAGS) -shared -o $@ $< $(LDFLAGS) $(LIBS)
 
 
 ttserver : ttserver.o $(LIBRARYFILES)
-	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS_tt)
+	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLIBS) $(LIBS)
 
 
 tculmgr : tculmgr.o $(LIBRARYFILES)
-	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS_tt)
+	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLIBS) $(LIBS)
 
 
 tcrmgr : tcrmgr.o $(LIBRARYFILES)
-	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLDFLAGS) -ltt $(LIBS_tt)
+	$(LDENV) $(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(CMDLIBS) $(LIBS)
 
 
-ttconf.o : ttconf.h
+tcutil.o : conf.h tcutil.h
 
-ttutil.o : ttconf.h ttutil.h
+tchdb.o : conf.h tcutil.h tchdb.h
 
-tculog.o : ttconf.h ttutil.h tculog.h
+tcadb.o : conf.h tcutil.h tchdb.h tcadb.h
 
-tcrdb.o : ttconf.h ttutil.h tcrdb.h
+ttutil.o : conf.h ttutil.h
 
-ttserver.o tculmgr.o : ttconf.h ttutil.h tculog.h tcrdb.h
+tculog.o : conf.h ttutil.h tculog.h
+
+tcrdb.o : conf.h ttutil.h tcrdb.h
+
+tcrmgr.o : conf.h ttutil.h tcrdb.h
+
+ttserver.o tculmgr.o : conf.h ttutil.h tculog.h tcrdb.h
+
+tcddb.o : tcutil.h tcadb.h
