@@ -301,7 +301,7 @@ TTSOCK *ttsocknew(int fd){
 /* Delete a socket object. */
 void ttsockdel(TTSOCK *sock){
   assert(sock);
-  tcfree(sock);
+  free(sock);
 }
 
 
@@ -545,7 +545,7 @@ char *ttsockgets2(TTSOCK *sock){
   assert(sock);
   bool err = false;
   (void)(err);
-  TCXSTR *xstr = tcxstrnew3(SOCKLINEBUFSIZ);
+  TCXSTR *xstr = tcxstrnew2(SOCKLINEBUFSIZ);
   pthread_cleanup_push((void (*)(void *))tcxstrdel, xstr);
   int size = 0;
   while(true){
@@ -634,7 +634,7 @@ int tthttpfetch(const char *url, TCMAP *reqheads, TCMAP *resheads, TCXSTR *resbo
       if(authority){
         char *enc = tcbaseencode(authority, strlen(authority));
         tcxstrprintf(obuf, "Authorization: Basic %s\r\n", enc);
-        tcfree(enc);
+        free(enc);
       }
       double tout = -1;
       if(reqheads){
@@ -655,7 +655,7 @@ int tthttpfetch(const char *url, TCMAP *reqheads, TCMAP *resheads, TCXSTR *resbo
               wp++;
             }
             tcxstrprintf(obuf, "%s: %s\r\n", cap, tcmapget2(reqheads, name));
-            tcfree(cap);
+            free(cap);
           }
         }
       }
@@ -762,7 +762,7 @@ int tthttpfetch(const char *url, TCMAP *reqheads, TCMAP *resheads, TCXSTR *resbo
             } else if(resbody){
               tcxstrcat(resbody, body, bsiz);
             }
-            tcfree(body);
+            free(body);
           }
         }
       }
@@ -870,7 +870,7 @@ void ttservdel(TTSERV *serv){
   pthread_cond_destroy(&serv->qcnd);
   pthread_mutex_destroy(&serv->qmtx);
   tclistdel(serv->queue);
-  tcfree(serv);
+  free(serv);
 }
 
 
@@ -1020,10 +1020,6 @@ bool ttservstart(TTSERV *serv){
           } else {
             cfd = ttacceptsock(lfd, addr, &port);
           }
-          if(epoll_reassoc(epfd, lfd) != 0){
-            if(cfd != -1) close(cfd);
-            cfd = -1;
-          }
           if(cfd != -1){
             ttservlog(serv, TTLOGINFO, "connected: %s:%d", addr, port);
             struct epoll_event ev;
@@ -1154,7 +1150,7 @@ bool ttservstart(TTSERV *serv){
       ttservlog(serv, TTLOGERROR, "pthread_join failed");
     }
   }
-  if(epoll_close(epfd) != 0){
+  if(close(epfd) != 0){
     err = true;
     ttservlog(serv, TTLOGERROR, "epoll_close failed");
   }
@@ -1216,7 +1212,7 @@ char *ttbreakservexpr(const char *expr, int *pp){
   if(pp) *pp = port;
   tcstrtrim(host);
   if(*host == '\0'){
-    tcfree(host);
+    free(host);
     host = tcstrdup("127.0.0.1");
   }
   return host;
@@ -1322,7 +1318,7 @@ static void *ttservdeqtasks(void *argp){
       }
       int code = empty ? pthread_cond_timedwait(&serv->qcnd, &serv->qmtx, &ts) : 0;
       if(code == 0 || code == ETIMEDOUT || code == EINTR){
-        void *val = tclistshift2(serv->queue);
+        void *val = tclistshift(serv->queue);
         if(pthread_mutex_unlock(&serv->qmtx) != 0){
           err = true;
           ttservlog(serv, TTLOGERROR, "pthread_mutex_unlock failed");
@@ -1330,7 +1326,7 @@ static void *ttservdeqtasks(void *argp){
         if(val){
           empty = false;
           int cfd = *(int *)val;
-          tcfree(val);
+          free(val);
           pthread_cleanup_push((void (*)(void *))close, (void *)(intptr_t)cfd);
           TTSOCK *sock = ttsocknew(cfd);
           pthread_cleanup_push((void (*)(void *))ttsockdel, sock);

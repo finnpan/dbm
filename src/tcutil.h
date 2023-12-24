@@ -43,15 +43,22 @@ __TCUTIL_CLINKAGEBEGIN
  *************************************************************************************************/
 
 
-/* String containing the version information. */
-extern const char *tcversion;
+#define TCMALLOC(TC_res, TC_size) \
+  do { \
+    if(!((TC_res) = malloc(TC_size))) tcmyfatal("out of memory"); \
+  } while(false)
 
 
-/* Pointer to the call back function for handling a fatal error.
-   The argument specifies the error message.
-   The initial value of this variable is `NULL'.  If the value is `NULL', the default function is
-   called when a fatal error occurs.  A fatal error occurs when memory allocation is failed. */
-extern void (*tcfatalfunc)(const char *);
+#define TCCALLOC(TC_res, TC_nmemb, TC_size) \
+  do { \
+    if(!((TC_res) = calloc((TC_nmemb), (TC_size)))) tcmyfatal("out of memory"); \
+  } while(false)
+
+
+#define TCREALLOC(TC_res, TC_ptr, TC_size) \
+  do { \
+    if(!((TC_res) = realloc((TC_ptr), (TC_size)))) tcmyfatal("out of memory"); \
+  } while(false)
 
 
 /* Allocate a region on memory.
@@ -100,19 +107,6 @@ void *tcmemdup(const void *ptr, size_t size);
    Because the region of the return value is allocated with the `malloc' call, it should be
    released with the `free' call when it is no longer in use. */
 char *tcstrdup(const void *str);
-
-
-/* Free a region on memory.
-   `ptr' specifies the pointer to the region.  If it is `NULL', this function has no effect.
-   Although this function is just a wrapper of `free' call, this is useful in applications using
-   another package of the `malloc' series. */
-void tcfree(void *ptr);
-
-
-
-/*************************************************************************************************
- * basic utilities (for experts)
- *************************************************************************************************/
 
 
 /* type of the pointer to a comparison function.
@@ -176,7 +170,7 @@ TCXSTR *tcxstrnew(void);
 /* Create an extensible string object with the initial allocation size.
    `asiz' specifies the initial allocation size.
    The return value is the new extensible string object. */
-TCXSTR *tcxstrnew3(int asiz);
+TCXSTR *tcxstrnew2(int asiz);
 
 
 /* Delete an extensible string object.
@@ -240,12 +234,6 @@ void tcxstrprintf(TCXSTR *xstr, const char *format, ...);
    Because the region of the return value is allocated with the `malloc' call, it should be
    released with the `free' call when it is no longer in use. */
 char *tcsprintf(const char *format, ...);
-
-
-
-/*************************************************************************************************
- * extensible string (for experts)
- *************************************************************************************************/
 
 
 /* Convert an extensible string object into a usual allocated region.
@@ -334,22 +322,13 @@ void tclistpush(TCLIST *list, const void *ptr, int size);
 void tclistpush2(TCLIST *list, const char *str);
 
 
-/* Remove a string element of the end of a list object.
-   `list' specifies the list object.
-   The return value is the string of the removed element.
-   Because the region of the return value is allocated with the `malloc' call, it should be
-   released with the `free' call when it is no longer in use.  If the list is empty, the return
-   value is `NULL'. */
-char *tclistpop2(TCLIST *list);
-
-
 /* Remove a string element of the top of a list object.
    `list' specifies the list object.
    The return value is the string of the removed element.
    Because the region of the return value is allocated with the `malloc' call, it should be
    released with the `free' call when it is no longer in use.  If the list is empty, the return
    value is `NULL'. */
-char *tclistshift2(TCLIST *list);
+char *tclistshift(TCLIST *list);
 
 
 /* Overwrite an element at the specified location of a list object.
@@ -372,12 +351,6 @@ void tclistsort(TCLIST *list);
 void tclistclear(TCLIST *list);
 
 
-
-/*************************************************************************************************
- * array list (for experts)
- *************************************************************************************************/
-
-
 /* Add an allocated element at the end of a list object.
    `list' specifies the list object.
    `ptr' specifies the pointer to the region allocated with `malloc' call.
@@ -395,6 +368,19 @@ void tclistpushmalloc(TCLIST *list, void *ptr, int size);
    numbers.  The other conversion character work as with each original.
    The other arguments are used according to the format string. */
 void tclistprintf(TCLIST *list, const char *format, ...);
+
+
+/* Alias of `tclistval' but not checking size. */
+#define TCLISTVAL(TC_ptr, TC_list, TC_index, TC_size) \
+  do { \
+    (TC_ptr) = (TC_list)->array[(TC_index)+(TC_list)->start].ptr; \
+    (TC_size) = (TC_list)->array[(TC_index)+(TC_list)->start].size; \
+  } while(false)
+
+
+/* Alias of `tclistval' but not checking size and not using the third parameter. */
+#define TCLISTVALPTR(TC_list, TC_index) \
+  ((void *)((TC_list)->array[(TC_index)+(TC_list)->start].ptr))
 
 
 
@@ -1614,72 +1600,33 @@ typedef struct {                         /* type of structure for a bit stream o
   int size;                              /* size of used region */
 } TCBITSTRM;
 
+
 /* Initialize a bit stream object as writer. */
-#define TCBITSTRMINITW(TC_bitstrm, TC_ptr) \
-  do { \
-    (TC_bitstrm).sp = (uint8_t *)(TC_ptr); \
-    (TC_bitstrm).cp = (TC_bitstrm).sp; \
-    *(TC_bitstrm).cp = 0; \
-    (TC_bitstrm).idx = 3; \
-    (TC_bitstrm).size = 1; \
-  } while(false);
+void tcbitstrminitw(TCBITSTRM *bitstrm, char* obuf);
 
 
 /* Concatenate a bit to a bit stream object. */
-#define TCBITSTRMCAT(TC_bitstrm, sign) \
-  do { \
-    if((TC_bitstrm).idx >= 8){ \
-      *(++(TC_bitstrm).cp) = 0; \
-      (TC_bitstrm).idx = 0; \
-      (TC_bitstrm).size++; \
-    } \
-    *(TC_bitstrm).cp |= (sign << (TC_bitstrm).idx); \
-    (TC_bitstrm).idx++; \
-  } while(false);
+void tcbitstrmcat(TCBITSTRM *bitstrm, int sign);
 
 
 /* Set the end mark to a bit stream object. */
-#define TCBITSTRMSETEND(TC_bitstrm) \
-  do { \
-    if((TC_bitstrm).idx >= 8){ \
-      *(++(TC_bitstrm).cp) = 0; \
-      (TC_bitstrm).idx = 0; \
-      (TC_bitstrm).size++; \
-    } \
-    *(TC_bitstrm).sp |= (TC_bitstrm).idx & 7; \
-  } while(false);
+void tcbitstrmsetend(TCBITSTRM *bitstrm);
 
 
 /* Get the size of the used region of a bit stream object. */
-#define TCBITSTRMSIZE(TC_bitstrm) \
-  ((TC_bitstrm).size)
+int tcbitstrmsize(TCBITSTRM *bitstrm);
 
 
 /* Initialize a bit stream object as reader. */
-#define TCBITSTRMINITR(TC_bitstrm, TC_ptr, TC_size) \
-  do { \
-    (TC_bitstrm).sp = (uint8_t *)(TC_ptr); \
-    (TC_bitstrm).cp = (TC_bitstrm).sp; \
-    (TC_bitstrm).idx = 3; \
-    (TC_bitstrm).size = (TC_size); \
-  } while(false);
+void tcbitstrminitr(TCBITSTRM *bitstrm, const char *ptr, int size);
 
 
 /* Read a bit from a bit stream object. */
-#define TCBITSTRMREAD(TC_bitstrm, TC_sign) \
-  do { \
-    if((TC_bitstrm).idx >= 8){ \
-      (TC_bitstrm).cp++; \
-      (TC_bitstrm).idx = 0; \
-    } \
-    (TC_sign) = (*((TC_bitstrm).cp) & (1 << (TC_bitstrm).idx)) > 0; \
-    (TC_bitstrm).idx++; \
-  } while(false);
+void tcbitstrmread(TCBITSTRM *bitstrm, int *sign);
 
 
 /* Get the number of bits of a bit stream object. */
-#define TCBITSTRMNUM(TC_bitstrm) \
-  ((((TC_bitstrm).size - 1) << 3) + (*(TC_bitstrm).sp & 7) - 3)
+int tcbitstrmnum(TCBITSTRM *bitstrm);
 
 
 
@@ -1690,7 +1637,6 @@ typedef struct {                         /* type of structure for a bit stream o
 
 #include <stdio.h>
 
-#define _TC_VERSION    "1.4.48"
 #define _TC_LIBVER     911
 #define _TC_FORMATVER  "1.0"
 
@@ -1719,13 +1665,6 @@ enum {                                   /* enumeration for error codes */
   TCEKEEP,                               /* existing record */
   TCENOREC,                              /* no record found */
   TCEMISC = 9999                         /* miscellaneous error */
-};
-
-enum {                                   /* enumeration for database type */
-  TCDBTHASH,                             /* hash table */
-  TCDBTBTREE,                            /* B+ tree */
-  TCDBTFIXED,                            /* fixed-length */
-  TCDBTTABLE                             /* table */
 };
 
 
@@ -1782,80 +1721,6 @@ int tcnumtostrbin(uint64_t num, char *buf, int col, int fc);
 uint64_t tcpagealign(uint64_t off);
 
 
-/* Print debug information with a formatted string as with `printf'. */
-#if __STDC_VERSION__ >= 199901L
-#define TCDPRINTF(...) \
-  do { \
-    fprintf(stderr, "%s:%d:%s: ", __FILE__, __LINE__, __func__); \
-    fprintf(stderr, __VA_ARGS__); \
-    fprintf(stderr, "\n"); \
-  } while(false);
-#else
-#define TCDPRINTF(TC_str) \
-  do { \
-    fprintf(stderr, "%s:%d:%s: %s\n", __FILE__, __LINE__, __func__, TC_str); \
-  } while(false);
-#endif
-
-
-/* Alias of `tcmalloc'. */
-#if defined(_MYFASTEST)
-#define TCMALLOC(TC_res, TC_size) \
-  do { \
-    (TC_res) = malloc(TC_size); \
-  } while(false)
-#else
-#define TCMALLOC(TC_res, TC_size) \
-  do { \
-    if(!((TC_res) = malloc(TC_size))) tcmyfatal("out of memory"); \
-  } while(false)
-#endif
-
-
-/* Alias of `tccalloc'. */
-#if defined(_MYFASTEST)
-#define TCCALLOC(TC_res, TC_nmemb, TC_size) \
-  do { \
-    (TC_res) = calloc((TC_nmemb), (TC_size)); \
-  } while(false)
-#else
-#define TCCALLOC(TC_res, TC_nmemb, TC_size) \
-  do { \
-    if(!((TC_res) = calloc((TC_nmemb), (TC_size)))) tcmyfatal("out of memory"); \
-  } while(false)
-#endif
-
-
-/* Alias of `tcrealloc'. */
-#if defined(_MYFASTEST)
-#define TCREALLOC(TC_res, TC_ptr, TC_size) \
-  do { \
-    (TC_res) = realloc((TC_ptr), (TC_size)); \
-  } while(false)
-#else
-#define TCREALLOC(TC_res, TC_ptr, TC_size) \
-  do { \
-    if(!((TC_res) = realloc((TC_ptr), (TC_size)))) tcmyfatal("out of memory"); \
-  } while(false)
-#endif
-
-
-/* Alias of `tcmemdup'. */
-#define TCMEMDUP(TC_res, TC_ptr, TC_size) \
-  do { \
-    TCMALLOC((TC_res), (TC_size) + 1); \
-    memcpy((TC_res), (TC_ptr), (TC_size)); \
-    (TC_res)[TC_size] = '\0'; \
-  } while(false)
-
-
-/* Alias of `tcfree'. */
-#define TCFREE(TC_ptr) \
-  do { \
-    free(TC_ptr); \
-  } while(false)
-
-
 /* Get the alignment of a variable type. */
 #define TCALIGNOF(TC_a) \
   ((int)offsetof(struct { int8_t TC_top; TC_a TC_bot; }, TC_bot))
@@ -1867,92 +1732,24 @@ typedef union { int32_t i; int64_t l; double d; void *p; TCCMP f; } tcgeneric_t;
   (((TC_hsiz | ~-TCALIGNOF(tcgeneric_t)) + 1) - TC_hsiz)
 
 
-/* Alias of `tcxstrcat'. */
-#define TCXSTRCAT(TC_xstr, TC_ptr, TC_size) \
-  do { \
-    int TC_mysize = (TC_size); \
-    int TC_nsize = (TC_xstr)->size + TC_mysize + 1; \
-    if((TC_xstr)->asize < TC_nsize){ \
-      while((TC_xstr)->asize < TC_nsize){ \
-        (TC_xstr)->asize *= 2; \
-        if((TC_xstr)->asize < TC_nsize) (TC_xstr)->asize = TC_nsize; \
-      } \
-      TCREALLOC((TC_xstr)->ptr, (TC_xstr)->ptr, (TC_xstr)->asize); \
-    } \
-    memcpy((TC_xstr)->ptr + (TC_xstr)->size, (TC_ptr), TC_mysize); \
-    (TC_xstr)->size += TC_mysize; \
-    (TC_xstr)->ptr[(TC_xstr)->size] = '\0'; \
-  } while(false)
-
-
-/* Alias of `tcxstrptr'. */
-#define TCXSTRPTR(TC_xstr) \
-  ((TC_xstr)->ptr)
-
-
-/* Alias of `tcxstrsize'. */
-#define TCXSTRSIZE(TC_xstr) \
-  ((TC_xstr)->size)
-
-
-/* Alias of `tclistnum'. */
-#define TCLISTNUM(TC_list) \
-  ((TC_list)->num)
-
-
-/* Alias of `tclistval' but not checking size. */
-#define TCLISTVAL(TC_ptr, TC_list, TC_index, TC_size) \
-  do { \
-    (TC_ptr) = (TC_list)->array[(TC_index)+(TC_list)->start].ptr; \
-    (TC_size) = (TC_list)->array[(TC_index)+(TC_list)->start].size; \
-  } while(false)
-
-
-/* Alias of `tclistval' but not checking size and not using the third parameter. */
-#define TCLISTVALPTR(TC_list, TC_index) \
-  ((void *)((TC_list)->array[(TC_index)+(TC_list)->start].ptr))
-
-
-/* Alias of `tclistval' but not checking size and returning the size of the value. */
-#define TCLISTVALSIZ(TC_list, TC_index) \
-  ((TC_list)->array[(TC_index)+(TC_list)->start].size)
-
-
-/* Alias of `tclistpush'. */
-#define TCLISTPUSH(TC_list, TC_ptr, TC_size) \
-  do { \
-    int TC_mysize = (TC_size); \
-    int TC_index = (TC_list)->start + (TC_list)->num; \
-    if(TC_index >= (TC_list)->anum){ \
-      (TC_list)->anum += (TC_list)->num + 1; \
-      TCREALLOC((TC_list)->array, (TC_list)->array, \
-                (TC_list)->anum * sizeof((TC_list)->array[0])); \
-    } \
-    TCLISTDATUM *array = (TC_list)->array; \
-    TCMALLOC(array[TC_index].ptr, TC_mysize + 1);     \
-    memcpy(array[TC_index].ptr, (TC_ptr), TC_mysize); \
-    array[TC_index].ptr[TC_mysize] = '\0'; \
-    array[TC_index].size = TC_mysize; \
-    (TC_list)->num++; \
-  } while(false)
-
-
-/* Alias of `tcmaprnum'. */
-#define TCMAPRNUM(TC_map) \
-  ((TC_map)->rnum)
-
 
 /*************************************************************************************************
  * for ZLIB
  *************************************************************************************************/
+
+
 enum {
   _TCZMZLIB,
   _TCZMRAW,
   _TCZMGZIP
 };
+
+
 extern char *(*_tc_deflate)(const char *, int, int *, int);
 extern char *(*_tc_inflate)(const char *, int, int *, int);
 extern unsigned int (*_tc_getcrc)(const char *, int);
+
+
 extern char *(*_tc_bzcompress)(const char *, int, int *);
 extern char *(*_tc_bzdecompress)(const char *, int, int *);
 
@@ -1960,6 +1757,8 @@ extern char *(*_tc_bzdecompress)(const char *, int, int *);
 /* set a buffer for a variable length number */
 void tcsetvnumbuf32 (uint32_t TC_num, int* TC_len, char* TC_buf);
 void tcsetvnumbuf64 (uint64_t TC_num, int* TC_len, char* TC_buf);
+
+
 /* read a variable length buffer */
 void tcreadvnumbuf32 (const char* TC_buf, int TC_step, uint32_t* TC_num);
 void tcreadvnumbuf64 (const char* TC_buf, int TC_step, uint64_t* TC_num);

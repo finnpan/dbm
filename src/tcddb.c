@@ -74,7 +74,7 @@ static TCDDB *tcddbnew(void){
 
 static void tcddbdel(TCDDB *ddb){
   if(ddb->name) tcddbclose(ddb);
-  tcfree(ddb);
+  free(ddb);
 }
 
 
@@ -93,7 +93,7 @@ static bool tcddbopen(TCDDB *ddb, const char *name){
 
 static bool tcddbclose(TCDDB *ddb){
   if(!ddb->name) return false;
-  tcfree(ddb->name);
+  free(ddb->name);
   ddb->name = NULL;
   return true;
 }
@@ -104,7 +104,7 @@ static bool tcddbput(TCDDB *ddb, const void *kbuf, int ksiz, const void *vbuf, i
   bool err = false;
   char *path = makepath(ddb, kbuf, ksiz);
   if(!tcwritefile(path, vbuf, vsiz)) err = true;
-  tcfree(path);
+  free(path);
   return !err;
 }
 
@@ -114,7 +114,7 @@ static bool tcddbout(TCDDB *ddb, const void *kbuf, int ksiz){
   bool err = false;
   char *path = makepath(ddb, kbuf, ksiz);
   if(unlink(path) != 0) err = true;
-  tcfree(path);
+  free(path);
   return !err;
 }
 
@@ -124,7 +124,7 @@ static void *tcddbget(TCDDB *ddb, const void *kbuf, int ksiz, int *sp){
   void *vbuf;
   char *path = makepath(ddb, kbuf, ksiz);
   vbuf = tcreadfile(path, -1, sp);
-  tcfree(path);
+  free(path);
   return vbuf;
 }
 
@@ -132,7 +132,7 @@ static void *tcddbget(TCDDB *ddb, const void *kbuf, int ksiz, int *sp){
 static char *makepath(TCDDB *ddb, const void *kbuf, int ksiz){
   char *uenc = tcurlencode(kbuf, ksiz);
   char *path = tcsprintf("%s/%s", ddb->name, uenc);
-  tcfree(uenc);
+  free(uenc);
   return path;
 }
 

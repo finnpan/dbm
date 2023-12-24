@@ -65,14 +65,14 @@ TCULOG *tculognew(void){
 void tculogdel(TCULOG *ulog){
   assert(ulog);
   if(ulog->base) tculogclose(ulog);
-  if(ulog->aiocbs) tcfree(ulog->aiocbs);
+  if(ulog->aiocbs) free(ulog->aiocbs);
   pthread_mutex_destroy(&ulog->wmtx);
   pthread_cond_destroy(&ulog->cnd);
   pthread_rwlock_destroy(&ulog->rwlck);
   for(int i = TCULRMTXNUM - 1; i >= 0; i--){
     pthread_mutex_destroy(ulog->rmtxs + i);
   }
-  tcfree(ulog);
+  free(ulog);
 }
 
 
@@ -110,7 +110,7 @@ bool tculogopen(TCULOG *ulog, const char *base, uint64_t limsiz){
     int id = tcatoi(name);
     char *path = tcsprintf("%s/%08d%s", base, id, TCULSUFFIX);
     if(stat(path, &sbuf) == 0 && S_ISREG(sbuf.st_mode) && id > max) max = id;
-    tcfree(path);
+    free(path);
   }
   tclistdel(names);
   if(max < 1) max = 1;
@@ -146,7 +146,7 @@ bool tculogclose(TCULOG *ulog){
     }
   }
   if(ulog->fd != -1 && close(ulog->fd) != 0) err = true;
-  tcfree(ulog->base);
+  free(ulog->base);
   ulog->base = NULL;
   return !err;
 }
@@ -209,7 +209,7 @@ bool tculogwrite(TCULOG *ulog, uint64_t ts, uint32_t sid, uint32_t mid,
   if(ulog->fd == -1){
     char *path = tcsprintf("%s/%08d%s", ulog->base, ulog->max, TCULSUFFIX);
     int fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 00644);
-    tcfree(path);
+    free(path);
     struct stat sbuf;
     if(fd != -1 && fstat(fd, &sbuf) == 0){
       ulog->fd = fd;
@@ -255,7 +255,7 @@ bool tculogwrite(TCULOG *ulog, uint64_t ts, uint32_t sid, uint32_t mid,
       aiocbp->aio_nbytes = rsiz;
       while(aio_write(aiocbp) != 0){
         if(errno != EAGAIN){
-          tcfree((char *)aiocbp->aio_buf);
+          free((char *)aiocbp->aio_buf);
           aiocbp->aio_buf = NULL;
           err = true;
           break;
@@ -284,7 +284,7 @@ bool tculogwrite(TCULOG *ulog, uint64_t ts, uint32_t sid, uint32_t mid,
         }
         char *path = tcsprintf("%s/%08d%s", ulog->base, ulog->max + 1, TCULSUFFIX);
         int fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 00644);
-        tcfree(path);
+        free(path);
         if(fd != 0){
           if(close(ulog->fd) != 0) err = true;
           ulog->fd = fd;
@@ -324,7 +324,7 @@ TCULRD *tculrdnew(TCULOG *ulog, uint64_t ts){
     char *path = tcsprintf("%s/%08d%s", ulog->base, id, TCULSUFFIX);
     struct stat sbuf;
     if(stat(path, &sbuf) == 0 && S_ISREG(sbuf.st_mode) && id > max) max = id;
-    tcfree(path);
+    free(path);
   }
   tclistdel(names);
   if(max < 1) max = 1;
@@ -333,7 +333,7 @@ TCULRD *tculrdnew(TCULOG *ulog, uint64_t ts){
   for(int i = max; i > 0; i--){
     char *path = tcsprintf("%s/%08d%s", ulog->base, i, TCULSUFFIX);
     int fd = open(path, O_RDONLY, 00644);
-    tcfree(path);
+    free(path);
     if(fd == -1) break;
     int rsiz = sizeof(uint8_t) + sizeof(uint64_t);
     unsigned char buf[rsiz];
@@ -363,8 +363,8 @@ TCULRD *tculrdnew(TCULOG *ulog, uint64_t ts){
 void tculrddel(TCULRD *ulrd){
   assert(ulrd);
   if(ulrd->fd != -1) close(ulrd->fd);
-  tcfree(ulrd->rbuf);
-  tcfree(ulrd);
+  free(ulrd->rbuf);
+  free(ulrd);
 }
 
 
@@ -399,7 +399,7 @@ const void *tculrdread(TCULRD *ulrd, int *sp, uint64_t *tsp, uint32_t *sidp, uin
   if(ulrd->fd == -1){
     char *path = tcsprintf("%s/%08d%s", ulog->base, ulrd->num, TCULSUFFIX);
     ulrd->fd = open(path, O_RDONLY, 00644);
-    tcfree(path);
+    free(path);
     if(ulrd->fd == -1){
       pthread_rwlock_unlock(&ulog->rwlck);
       return NULL;
@@ -424,7 +424,7 @@ const void *tculrdread(TCULRD *ulrd, int *sp, uint64_t *tsp, uint32_t *sidp, uin
         ulrd->num++;
         char *path = tcsprintf("%s/%08d%s", ulog->base, ulrd->num, TCULSUFFIX);
         ulrd->fd = open(path, O_RDONLY, 00644);
-        tcfree(path);
+        free(path);
         if(ulrd->fd == -1){
           pthread_rwlock_unlock(&ulog->rwlck);
           return NULL;
@@ -502,7 +502,7 @@ bool tculogadbput(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     wp += vsiz;
     *(wp++) = err ? 1 : 0;
     if(!tculogwrite(ulog, 0, sid, mid, mbuf, msiz)) err = true;
-    if(mbuf != mstack) tcfree(mbuf);
+    if(mbuf != mstack) free(mbuf);
     tculogend(ulog, rmidx);
   }
   return !err;
@@ -537,7 +537,7 @@ bool tculogadbputkeep(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     wp += vsiz;
     *(wp++) = err ? 1 : 0;
     if(!tculogwrite(ulog, 0, sid, mid, mbuf, msiz)) err = true;
-    if(mbuf != mstack) tcfree(mbuf);
+    if(mbuf != mstack) free(mbuf);
     tculogend(ulog, rmidx);
   }
   return !err;
@@ -572,7 +572,7 @@ bool tculogadbputcat(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     wp += vsiz;
     *(wp++) = err ? 1 : 0;
     if(!tculogwrite(ulog, 0, sid, mid, mbuf, msiz)) err = true;
-    if(mbuf != mstack) tcfree(mbuf);
+    if(mbuf != mstack) free(mbuf);
     tculogend(ulog, rmidx);
   }
   return !err;
@@ -615,7 +615,7 @@ bool tculogadbputshl(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     wp += vsiz;
     *(wp++) = err ? 1 : 0;
     if(!tculogwrite(ulog, 0, sid, mid, mbuf, msiz)) err = true;
-    if(mbuf != mstack) tcfree(mbuf);
+    if(mbuf != mstack) free(mbuf);
     tculogend(ulog, rmidx);
   }
   return !err;
@@ -645,7 +645,7 @@ bool tculogadbout(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     wp += ksiz;
     *(wp++) = err ? 1 : 0;
     if(!tculogwrite(ulog, 0, sid, mid, mbuf, msiz)) err = true;
-    if(mbuf != mstack) tcfree(mbuf);
+    if(mbuf != mstack) free(mbuf);
     tculogend(ulog, rmidx);
   }
   return !err;
@@ -677,7 +677,7 @@ int tculogadbaddint(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     wp += ksiz;
     *(wp++) = (rnum == INT_MIN) ? 1 : 0;
     if(!tculogwrite(ulog, 0, sid, mid, mbuf, msiz)) rnum = INT_MIN;
-    if(mbuf != mstack) tcfree(mbuf);
+    if(mbuf != mstack) free(mbuf);
     tculogend(ulog, rmidx);
   }
   return rnum;
@@ -708,7 +708,7 @@ double tculogadbadddouble(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
     wp += ksiz;
     *(wp++) = isnan(rnum) ? 1 : 0;
     if(!tculogwrite(ulog, 0, sid, mid, mbuf, msiz)) rnum = INT_MIN;
-    if(mbuf != mstack) tcfree(mbuf);
+    if(mbuf != mstack) free(mbuf);
     tculogend(ulog, rmidx);
   }
   return rnum;
@@ -756,7 +756,7 @@ bool tculogadboptimize(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb, con
     wp += psiz;
     *(wp++) = err ? 1 : 0;
     if(!tculogwrite(ulog, 0, sid, mid, mbuf, msiz)) err = true;
-    if(mbuf != mstack) tcfree(mbuf);
+    if(mbuf != mstack) free(mbuf);
     tculogend(ulog, -1);
   }
   return !err;
@@ -825,7 +825,7 @@ TCLIST *tculogadbmisc(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
       if(rv) tclistdel(rv);
       rv = NULL;
     }
-    if(mbuf != mstack) tcfree(mbuf);
+    if(mbuf != mstack) free(mbuf);
     tculogend(ulog, -1);
   }
   return rv;
@@ -999,7 +999,7 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
         rp += sizeof(psiz);
         char *params = tcmemdup(rp, psiz);
         if(tculogadboptimize(ulog, sid, mid, adb, params) != exp) *cp = false;
-        tcfree(params);
+        free(params);
       } else {
         err = true;
       }
@@ -1040,7 +1040,7 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
           if(exp) *cp = false;
         }
         tclistdel(args);
-        tcfree(name);
+        free(name);
       } else {
         err = true;
       }
@@ -1066,7 +1066,7 @@ TCREPL *tcreplnew(void){
 void tcrepldel(TCREPL *repl){
   assert(repl);
   if(repl->fd >= 0) tcreplclose(repl);
-  tcfree(repl);
+  free(repl);
 }
 
 
@@ -1112,7 +1112,7 @@ bool tcreplclose(TCREPL *repl){
   assert(repl);
   if(repl->fd < 0) return false;
   bool err = false;
-  tcfree(repl->rbuf);
+  free(repl->rbuf);
   ttsockdel(repl->sock);
   if(!ttclosesock(repl->fd)) err = true;
   repl->fd = -1;
@@ -1174,7 +1174,7 @@ static bool tculogflushaiocbp(struct aiocb *aiocbp){
     }
     if(aio_suspend((void *)&aiocbp, 1, NULL) == -1) err = true;
   }
-  tcfree((char *)aiocbp->aio_buf);
+  free((char *)aiocbp->aio_buf);
   aiocbp->aio_buf = NULL;
   if(aio_return(aiocbp) != aiocbp->aio_nbytes) err = true;
   return !err;

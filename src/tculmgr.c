@@ -107,7 +107,7 @@ static char *mygetline(FILE *ifp){
     if(c == '\0') break;
   }
   if(end){
-    tcfree(buf);
+    free(buf);
     return NULL;
   }
   buf[len] = '\0';
@@ -219,7 +219,7 @@ static int procimport(const char *upath, uint64_t lim){
     uint64_t ts = ttstrtots(line);
     char *pv = strchr(line, '\t');
     if(!pv || ts < 1){
-      tcfree(line);
+      free(line);
       continue;
     }
     pv++;
@@ -227,7 +227,7 @@ static int procimport(const char *upath, uint64_t lim){
     char *mp = strchr(pv, ':');
     pv = strchr(pv, '\t');
     if(!pv){
-      tcfree(line);
+      free(line);
       continue;
     }
     pv++;
@@ -235,23 +235,23 @@ static int procimport(const char *upath, uint64_t lim){
     if(mp && mp < pv) mid = tcatoi(mp + 1);
     pv = strchr(pv, '\t');
     if(!pv){
-      tcfree(line);
+      free(line);
       continue;
     }
     pv++;
     int osiz;
     unsigned char *obj = (unsigned char *)tchexdecode(pv, &osiz);
     if(!obj || osiz < 3 || *obj != TTMAGICNUM){
-      tcfree(obj);
-      tcfree(line);
+      free(obj);
+      free(line);
       continue;
     }
     if(!tculogwrite(ulog, ts, sid, mid, obj, osiz)){
       printerr("tculogwrite");
       err = true;
     }
-    tcfree(obj);
-    tcfree(line);
+    free(obj);
+    free(line);
   }
   if(!tculogclose(ulog)){
     printerr("tculogclose");

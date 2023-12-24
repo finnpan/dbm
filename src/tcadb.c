@@ -91,9 +91,9 @@ void tcadbdel(TCADB *adb){
   if(adb->skel){
     ADBSKEL *skel = adb->skel;
     if(skel->del) skel->del(skel->opq);
-    TCFREE(skel);
+    free(skel);
   }
-  TCFREE(adb);
+  free(adb);
 }
 
 
@@ -102,7 +102,7 @@ bool tcadbopen(TCADB *adb, const char *name){
   assert(adb && name);
   if(adb->omode != ADBOVOID) return false;
   TCLIST *elems = tcstrsplit(name, "#");
-  char *path = tclistshift2(elems);
+  char *path = tclistshift(elems);
   if(!path){
     tclistdel(elems);
     return false;
@@ -132,7 +132,7 @@ bool tcadbopen(TCADB *adb, const char *name){
   int32_t width = -1;
   int64_t limsiz = -1;
   TCLIST *idxs = NULL;
-  int ln = TCLISTNUM(elems);
+  int ln = tclistnum(elems);
   for(int i = 0; i < ln; i++){
     const char *elem = TCLISTVALPTR(elems, i);
     char *pv = strchr(elem, '=');
@@ -183,7 +183,7 @@ bool tcadbopen(TCADB *adb, const char *name){
       limsiz = tcatoix(pv);
     } else if(!tcstricmp(elem, "idx")){
       if(!idxs) idxs = tclistnew();
-      TCLISTPUSH(idxs, pv, strlen(pv));
+      tclistpush(idxs, pv, strlen(pv));
     }
   }
   tclistdel(elems);
@@ -192,7 +192,7 @@ bool tcadbopen(TCADB *adb, const char *name){
     ADBSKEL *skel = adb->skel;
     if(!skel->open || !skel->open(skel->opq, name)){
       if(idxs) tclistdel(idxs);
-      TCFREE(path);
+      free(path);
       return false;
     }
     adb->omode = ADBOSKEL;
@@ -223,14 +223,14 @@ bool tcadbopen(TCADB *adb, const char *name){
     if(!tchdbopen(hdb, path, omode)){
       tchdbdel(hdb);
       if(idxs) tclistdel(idxs);
-      TCFREE(path);
+      free(path);
       return false;
     }
     adb->hdb = hdb;
     adb->omode = ADBOHDB;
   }
   if(idxs) tclistdel(idxs);
-  TCFREE(path);
+  free(path);
   if(adb->omode == ADBOVOID) return false;
   return true;
 }
@@ -683,7 +683,7 @@ bool tcadboptimize(TCADB *adb, const char *params){
   int32_t nmemb = -1; (void)nmemb;
   int32_t width = -1;
   int64_t limsiz = -1;
-  int ln = TCLISTNUM(elems);
+  int ln = tclistnum(elems);
   for(int i = 0; i < ln; i++){
     const char *elem = TCLISTVALPTR(elems, i);
     char *pv = strchr(elem, '=');
@@ -808,9 +808,9 @@ bool tcadbcopy(TCADB *adb, const char *path){
             char *vbuf = tcadbget(adb, kbuf, ksiz, &vsiz);
             if(vbuf){
               if(!tcadbput(tadb, kbuf, ksiz, vbuf, vsiz)) err = true;
-              TCFREE(vbuf);
+              free(vbuf);
             }
-            TCFREE(kbuf);
+            free(kbuf);
           }
           if(!tcadbclose(tadb)) err = true;
         } else {
@@ -1009,7 +1009,7 @@ uint64_t tcadbsize(TCADB *adb){
 /* Call a versatile function for miscellaneous operations of an abstract database object. */
 TCLIST *tcadbmisc(TCADB *adb, const char *name, const TCLIST *args){
   assert(adb && name && args);
-  int argc = TCLISTNUM(args);
+  int argc = tclistnum(args);
   TCLIST *rv;
   ADBSKEL *skel;
   switch(adb->omode){
@@ -1060,8 +1060,8 @@ TCLIST *tcadbmisc(TCADB *adb, const char *name, const TCLIST *args){
           int vsiz;
           char *vbuf = tcmdbget(adb->mdb, kbuf, ksiz, &vsiz);
           if(vbuf){
-            TCLISTPUSH(rv, vbuf, vsiz);
-            TCFREE(vbuf);
+            tclistpush(rv, vbuf, vsiz);
+            free(vbuf);
           } else {
             tclistdel(rv);
             rv = NULL;
@@ -1096,9 +1096,9 @@ TCLIST *tcadbmisc(TCADB *adb, const char *name, const TCLIST *args){
           int vsiz;
           char *vbuf = tcmdbget(adb->mdb, kbuf, ksiz, &vsiz);
           if(vbuf){
-            TCLISTPUSH(rv, kbuf, ksiz);
-            TCLISTPUSH(rv, vbuf, vsiz);
-            TCFREE(vbuf);
+            tclistpush(rv, kbuf, ksiz);
+            tclistpush(rv, vbuf, vsiz);
+            free(vbuf);
           }
         }
       } else if(!strcmp(name, "getpart")){
@@ -1122,7 +1122,7 @@ TCLIST *tcadbmisc(TCADB *adb, const char *name, const TCLIST *args){
               tclistpushmalloc(rv, vbuf, vsiz);
             } else {
               rv = NULL;
-              TCFREE(vbuf);
+              free(vbuf);
             }
           } else {
             rv = NULL;
@@ -1145,14 +1145,14 @@ TCLIST *tcadbmisc(TCADB *adb, const char *name, const TCLIST *args){
         int ksiz;
         char *kbuf = tcmdbiternext(adb->mdb, &ksiz);
         if(kbuf){
-          TCLISTPUSH(rv, kbuf, ksiz);
+          tclistpush(rv, kbuf, ksiz);
           int vsiz;
           char *vbuf = tcmdbget(adb->mdb, kbuf, ksiz, &vsiz);
           if(vbuf){
-            TCLISTPUSH(rv, vbuf, vsiz);
-            TCFREE(vbuf);
+            tclistpush(rv, vbuf, vsiz);
+            free(vbuf);
           }
-          TCFREE(kbuf);
+          free(kbuf);
         } else {
           tclistdel(rv);
           rv = NULL;
@@ -1197,13 +1197,13 @@ TCLIST *tcadbmisc(TCADB *adb, const char *name, const TCLIST *args){
                 int vsiz;
                 char *vbuf = tcmdbget(adb->mdb, kbuf, ksiz, &vsiz);
                 if(vbuf){
-                  TCLISTPUSH(rv, kbuf, ksiz);
-                  TCLISTPUSH(rv, vbuf, vsiz);
-                  TCFREE(vbuf);
+                  tclistpush(rv, kbuf, ksiz);
+                  tclistpush(rv, vbuf, vsiz);
+                  free(vbuf);
                   max--;
                 }
               }
-              TCFREE(kbuf);
+              free(kbuf);
             }
             regfree(&rbuf);
           } else {
@@ -1263,8 +1263,8 @@ TCLIST *tcadbmisc(TCADB *adb, const char *name, const TCLIST *args){
           int vsiz;
           char *vbuf = tchdbget(adb->hdb, kbuf, ksiz, &vsiz);
           if(vbuf){
-            TCLISTPUSH(rv, vbuf, vsiz);
-            TCFREE(vbuf);
+            tclistpush(rv, vbuf, vsiz);
+            free(vbuf);
           } else {
             tclistdel(rv);
             rv = NULL;
@@ -1317,9 +1317,9 @@ TCLIST *tcadbmisc(TCADB *adb, const char *name, const TCLIST *args){
           int vsiz;
           char *vbuf = tchdbget(adb->hdb, kbuf, ksiz, &vsiz);
           if(vbuf){
-            TCLISTPUSH(rv, kbuf, ksiz);
-            TCLISTPUSH(rv, vbuf, vsiz);
-            TCFREE(vbuf);
+            tclistpush(rv, kbuf, ksiz);
+            tclistpush(rv, vbuf, vsiz);
+            free(vbuf);
           } else if(tchdbecode(adb->hdb) != TCENOREC){
             err = true;
           }
@@ -1349,7 +1349,7 @@ TCLIST *tcadbmisc(TCADB *adb, const char *name, const TCLIST *args){
               tclistpushmalloc(rv, vbuf, vsiz);
             } else {
               rv = NULL;
-              TCFREE(vbuf);
+              free(vbuf);
             }
           } else {
             rv = NULL;
@@ -1377,14 +1377,14 @@ TCLIST *tcadbmisc(TCADB *adb, const char *name, const TCLIST *args){
         int ksiz;
         char *kbuf = tchdbiternext(adb->hdb, &ksiz);
         if(kbuf){
-          TCLISTPUSH(rv, kbuf, ksiz);
+          tclistpush(rv, kbuf, ksiz);
           int vsiz;
           char *vbuf = tchdbget(adb->hdb, kbuf, ksiz, &vsiz);
           if(vbuf){
-            TCLISTPUSH(rv, vbuf, vsiz);
-            TCFREE(vbuf);
+            tclistpush(rv, vbuf, vsiz);
+            free(vbuf);
           }
-          TCFREE(kbuf);
+          free(kbuf);
         } else {
           tclistdel(rv);
           rv = NULL;
@@ -1444,10 +1444,10 @@ TCLIST *tcadbmisc(TCADB *adb, const char *name, const TCLIST *args){
             TCXSTR *kxstr = tcxstrnew();
             TCXSTR *vxstr = tcxstrnew();
             while(max > 0 && tchdbiternext3(adb->hdb, kxstr, vxstr)){
-              const char *kbuf = TCXSTRPTR(kxstr);
+              const char *kbuf = tcxstrptr(kxstr);
               if(regexec(&rbuf, kbuf, 0, NULL, 0) == 0){
-                TCLISTPUSH(rv, kbuf, TCXSTRSIZE(kxstr));
-                TCLISTPUSH(rv, TCXSTRPTR(vxstr), TCXSTRSIZE(vxstr));
+                tclistpush(rv, kbuf, tcxstrsize(kxstr));
+                tclistpush(rv, tcxstrptr(vxstr), tcxstrsize(vxstr));
                 max--;
               }
             }
@@ -1490,7 +1490,7 @@ TCLIST *tcadbmisc(TCADB *adb, const char *name, const TCLIST *args){
 bool tcadbsetskel(TCADB *adb, ADBSKEL *skel){
   assert(skel);
   if(adb->omode != ADBOVOID) return false;
-  if(adb->skel) TCFREE(adb->skel);
+  if(adb->skel) free(adb->skel);
   adb->skel = tcmemdup(skel, sizeof(*skel));
   return true;
 }
@@ -1666,7 +1666,7 @@ static ADBMUL *tcadbmulnew(int num){
 static void tcadbmuldel(ADBMUL *mul){
   assert(mul);
   if(mul->adbs) tcadbmulclose(mul);
-  TCFREE(mul);
+  free(mul);
 }
 
 
@@ -1678,7 +1678,7 @@ static bool tcadbmulopen(ADBMUL *mul, const char *name){
   if(mul->adbs) return false;
   mul->iter = -1;
   TCLIST *elems = tcstrsplit(name, "#");
-  char *path = tclistshift2(elems);
+  char *path = tclistshift(elems);
   if(!path){
     tclistdel(elems);
     return false;
@@ -1690,7 +1690,7 @@ static bool tcadbmulopen(ADBMUL *mul, const char *name){
   bool owmode = true;
   bool ocmode = true;
   bool otmode = false;
-  int ln = TCLISTNUM(elems);
+  int ln = tclistnum(elems);
   for(int i = 0; i < ln; i++){
     const char *elem = TCLISTVALPTR(elems, i);
     char *pv = strchr(elem, '=');
@@ -1707,7 +1707,7 @@ static bool tcadbmulopen(ADBMUL *mul, const char *name){
   char *gpat = tcsprintf("%s%c%s*%s", path, MYPATHCHR, ADBMULPREFIX, ext);
   TCLIST *cpaths = tcglobpat(gpat);
   tclistsort(cpaths);
-  int cnum = TCLISTNUM(cpaths);
+  int cnum = tclistnum(cpaths);
   if(owmode){
     if(otmode){
       for(int i = 0; i < cnum; i++){
@@ -1724,7 +1724,7 @@ static bool tcadbmulopen(ADBMUL *mul, const char *name){
         for(int i = 0; i < mul->num; i++){
           tclistprintf(cpaths, "%s%c%s%03d%s", path, MYPATHCHR, ADBMULPREFIX, i + 1, ext);
         }
-        cnum = TCLISTNUM(cpaths);
+        cnum = tclistnum(cpaths);
       }
     }
   }
@@ -1736,14 +1736,14 @@ static bool tcadbmulopen(ADBMUL *mul, const char *name){
       const char *cpath = TCLISTVALPTR(cpaths, i);
       char *cname = tcsprintf("%s%s", cpath, params);
       if(!tcadbopen(adb, cname)) err = true;
-      TCFREE(cname);
+      free(cname);
       adbs[i] = adb;
     }
     if(err){
       for(int i = cnum - 1; i >= 0; i--){
         tcadbdel(adbs[i]);
       }
-      TCFREE(adbs);
+      free(adbs);
     } else {
       mul->adbs = adbs;
       mul->num = cnum;
@@ -1752,8 +1752,8 @@ static bool tcadbmulopen(ADBMUL *mul, const char *name){
     }
   }
   tclistdel(cpaths);
-  TCFREE(gpat);
-  TCFREE(path);
+  free(gpat);
+  free(path);
   return !err;
 }
 
@@ -1772,8 +1772,8 @@ static bool tcadbmulclose(ADBMUL *mul){
     if(!tcadbclose(adb)) err = true;
     tcadbdel(adb);
   }
-  TCFREE(mul->path);
-  TCFREE(adbs);
+  free(mul->path);
+  free(adbs);
   mul->adbs = NULL;
   mul->path = NULL;
   return !err;
@@ -1927,14 +1927,14 @@ static TCLIST *tcadbmulfwmkeys(ADBMUL *mul, const void *pbuf, int psiz, int max)
   TCADB **adbs = mul->adbs;
   int num = mul->num;
   TCLIST *rv = tclistnew();
-  for(int i = 0; i < num && TCLISTNUM(rv) < max; i++){
+  for(int i = 0; i < num && tclistnum(rv) < max; i++){
     TCLIST *res = tcadbfwmkeys(adbs[i], pbuf, psiz, max);
-    int rnum = TCLISTNUM(res);
-    for(int j = 0; j < rnum && TCLISTNUM(rv) < max; j++){
+    int rnum = tclistnum(res);
+    for(int j = 0; j < rnum && tclistnum(rv) < max; j++){
       const char *vbuf;
       int vsiz;
       TCLISTVAL(vbuf, res, j, vsiz);
-      TCLISTPUSH(rv, vbuf, vsiz);
+      tclistpush(rv, vbuf, vsiz);
     }
     tclistdel(res);
   }
@@ -2050,7 +2050,7 @@ static bool tcadbmulcopy(ADBMUL *mul, const char *path){
         if(!ext) ext = "";
         char *npath = tcsprintf("%s%c%s%03d%s", path, MYPATHCHR, ADBMULPREFIX, i + 1, ext);
         if(!tcadbcopy(adb, npath)) err = true;
-        TCFREE(npath);
+        free(npath);
       } else {
         err = true;
       }
@@ -2172,24 +2172,24 @@ static TCLIST *tcadbmulmisc(ADBMUL *mul, const char *name, const TCLIST *args){
   TCLIST *rv = tclistnew();
   if(*name == '@'){
     name++;
-    int anum = TCLISTNUM(args) - 1;
+    int anum = tclistnum(args) - 1;
     TCLIST *targs = tclistnew2(2);
     for(int i = 0; i < anum; i++){
       const char *kbuf;
       int ksiz;
       TCLISTVAL(kbuf, args, i, ksiz);
       tclistclear(targs);
-      TCLISTPUSH(targs, kbuf, ksiz);
+      tclistpush(targs, kbuf, ksiz);
       int idx = tcadbmulidx(mul, kbuf, ksiz);
       TCADB *adb = mul->adbs[idx];
       TCLIST *res = tcadbmisc(adb, name, targs);
       if(res){
-        int rnum = TCLISTNUM(res);
+        int rnum = tclistnum(res);
         for(int j = 0; j < rnum; j++){
           const char *vbuf;
           int vsiz;
           TCLISTVAL(vbuf, res, j, vsiz);
-          TCLISTPUSH(rv, vbuf, vsiz);
+          tclistpush(rv, vbuf, vsiz);
         }
         tclistdel(res);
       }
@@ -2197,7 +2197,7 @@ static TCLIST *tcadbmulmisc(ADBMUL *mul, const char *name, const TCLIST *args){
     tclistdel(targs);
   } else if(*name == '%'){
     name++;
-    int anum = TCLISTNUM(args) - 1;
+    int anum = tclistnum(args) - 1;
     TCLIST *targs = tclistnew2(2);
     for(int i = 0; i < anum; i += 2){
       const char *kbuf, *vbuf;
@@ -2205,16 +2205,16 @@ static TCLIST *tcadbmulmisc(ADBMUL *mul, const char *name, const TCLIST *args){
       TCLISTVAL(kbuf, args, i, ksiz);
       TCLISTVAL(vbuf, args, i + 1, vsiz);
       tclistclear(targs);
-      TCLISTPUSH(targs, kbuf, ksiz);
-      TCLISTPUSH(targs, vbuf, vsiz);
+      tclistpush(targs, kbuf, ksiz);
+      tclistpush(targs, vbuf, vsiz);
       int idx = tcadbmulidx(mul, kbuf, ksiz);
       TCADB *adb = mul->adbs[idx];
       TCLIST *res = tcadbmisc(adb, name, targs);
       if(res){
-        int rnum = TCLISTNUM(res);
+        int rnum = tclistnum(res);
         for(int j = 0; j < rnum; j++){
           TCLISTVAL(vbuf, res, j, vsiz);
-          TCLISTPUSH(rv, vbuf, vsiz);
+          tclistpush(rv, vbuf, vsiz);
         }
         tclistdel(res);
       }
@@ -2224,12 +2224,12 @@ static TCLIST *tcadbmulmisc(ADBMUL *mul, const char *name, const TCLIST *args){
     for(int i = 0; i < num; i++){
       TCLIST *res = tcadbmisc(adbs[i], name, args);
       if(res){
-        int rnum = TCLISTNUM(res);
+        int rnum = tclistnum(res);
         for(int j = 0; j < rnum; j++){
           const char *vbuf;
           int vsiz;
           TCLISTVAL(vbuf, res, j, vsiz);
-          TCLISTPUSH(rv, vbuf, vsiz);
+          tclistpush(rv, vbuf, vsiz);
         }
         tclistdel(res);
       } else {

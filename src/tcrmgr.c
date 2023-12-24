@@ -235,7 +235,7 @@ static char *mygetline(FILE *ifp){
     if(c == '\0') break;
   }
   if(end){
-    tcfree(buf);
+    free(buf);
     return NULL;
   }
   buf[len] = '\0';
@@ -354,8 +354,8 @@ static int runput(int argc, char **argv){
     vbuf = tcmemdup(value, vsiz);
   }
   int rv = procput(host, port, kbuf, ksiz, vbuf, vsiz, dmode, shlw);
-  tcfree(vbuf);
-  tcfree(kbuf);
+  free(vbuf);
+  free(kbuf);
   return rv;
 }
 
@@ -400,7 +400,7 @@ static int runout(int argc, char **argv){
     kbuf = tcmemdup(key, ksiz);
   }
   int rv = procout(host, port, kbuf, ksiz);
-  tcfree(kbuf);
+  free(kbuf);
   return rv;
 }
 
@@ -451,7 +451,7 @@ static int runget(int argc, char **argv){
     kbuf = tcmemdup(key, ksiz);
   }
   int rv = procget(host, port, kbuf, ksiz, sep, px, pz);
-  tcfree(kbuf);
+  free(kbuf);
   return rv;
 }
 
@@ -491,14 +491,14 @@ static int runmget(int argc, char **argv){
       int ksiz;
       char *kbuf = tchexdecode(tclistval2(keys, i), &ksiz);
       tclistover(keys, i, kbuf, ksiz);
-      tcfree(kbuf);
+      free(kbuf);
     }
   } else if(sep > 0){
     for(int i = 0; i < tclistnum(keys); i++){
       int ksiz;
       char *kbuf = strtozsv(tclistval2(keys, i), sep, &ksiz);
       tclistover(keys, i, kbuf, ksiz);
-      tcfree(kbuf);
+      free(kbuf);
     }
   }
   int rv = procmget(host, port, keys, sep, px);
@@ -611,8 +611,8 @@ static int runext(int argc, char **argv){
     vbuf = tcmemdup(value, vsiz);
   }
   int rv = procext(host, port, func, opts, kbuf, ksiz, vbuf, vsiz, sep, px, pz);
-  tcfree(vbuf);
-  tcfree(kbuf);
+  free(vbuf);
+  free(kbuf);
   return rv;
 }
 
@@ -755,12 +755,12 @@ static int runmisc(int argc, char **argv){
         int size;
         char *buf = tchexdecode(argv[i], &size);
         tclistpush(args, buf, size);
-        tcfree(buf);
+        free(buf);
       } else if(sep > 0){
         int size;
         char *buf = strtozsv(argv[i], sep, &size);
         tclistpush(args, buf, size);
-        tcfree(buf);
+        free(buf);
       } else {
         tclistpush2(args, argv[i]);
       }
@@ -979,7 +979,7 @@ static int procinform(const char *host, int port, bool st){
     char *status = tcrdbstat(rdb);
     if(status){
       printf("%s", status);
-      tcfree(status);
+      free(status);
     } else {
       printerr(rdb);
       err = true;
@@ -1100,7 +1100,7 @@ static int procget(const char *host, int port, const char *kbuf, int ksiz, int s
   if(vbuf){
     printdata(vbuf, vsiz, px, sep);
     if(!pz) putchar('\n');
-    tcfree(vbuf);
+    free(vbuf);
   } else {
     printerr(rdb);
     err = true;
@@ -1177,7 +1177,7 @@ static int proclist(const char *host, int port, int sep, int max, bool pv, bool 
         if(vbuf){
           putchar('\t');
           printdata(vbuf, vsiz, px, sep);
-          tcfree(vbuf);
+          free(vbuf);
         }
       }
       putchar('\n');
@@ -1199,11 +1199,11 @@ static int proclist(const char *host, int port, int sep, int max, bool pv, bool 
         if(vbuf){
           putchar('\t');
           printdata(vbuf, vsiz, px, sep);
-          tcfree(vbuf);
+          free(vbuf);
         }
       }
       putchar('\n');
-      tcfree(kbuf);
+      free(kbuf);
       if(max >= 0 && ++cnt >= max) break;
     }
   }
@@ -1232,7 +1232,7 @@ static int procext(const char *host, int port, const char *name, int opts,
   if(xbuf){
     printdata(xbuf, xsiz, px, sep);
     if(!pz) putchar('\n');
-    tcfree(xbuf);
+    free(xbuf);
   } else {
     printerr(rdb);
     err = true;
@@ -1387,7 +1387,7 @@ static int procimporttsv(const char *host, int port, const char *file, bool nr,
   while(!err && (line = mygetline(ifp)) != NULL){
     char *pv = strchr(line, '\t');
     if(!pv){
-      tcfree(line);
+      free(line);
       continue;
     }
     *pv = '\0';
@@ -1411,8 +1411,8 @@ static int procimporttsv(const char *host, int port, const char *file, bool nr,
         err = true;
       }
     }
-    tcfree(vbuf);
-    tcfree(line);
+    free(vbuf);
+    free(line);
     if(cnt > 0 && cnt % 100 == 0){
       putchar('.');
       fflush(stdout);
@@ -1519,7 +1519,7 @@ static int procrepl(const char *host, int port, uint64_t ts, uint32_t sid, bool 
         memcpy(wp, rbuf, rsiz);
         fwrite(mbuf, 1, msiz, stdout);
         fflush(stdout);
-        if(mbuf != stack) tcfree(mbuf);
+        if(mbuf != stack) free(mbuf);
       }
     }
     tcreplclose(repl);
@@ -1555,7 +1555,7 @@ static int prochttp(const char *url, TCMAP *hmap, bool ih){
           wp++;
         }
         printf("%s: %s\n", cap, tcmapiterval2(name));
-        tcfree(cap);
+        free(cap);
       }
       printf("\n");
     }

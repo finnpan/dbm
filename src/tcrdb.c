@@ -113,11 +113,11 @@ TCRDB *tcrdbnew(void){
 void tcrdbdel(TCRDB *rdb){
   assert(rdb);
   if(rdb->fd >= 0) tcrdbclose(rdb);
-  if(rdb->expr) tcfree(rdb->expr);
-  if(rdb->host) tcfree(rdb->host);
+  if(rdb->expr) free(rdb->expr);
+  if(rdb->host) free(rdb->host);
   pthread_key_delete(rdb->eckey);
   pthread_mutex_destroy(&rdb->mmtx);
-  tcfree(rdb);
+  free(rdb);
 }
 
 
@@ -169,7 +169,7 @@ bool tcrdbopen2(TCRDB *rdb, const char *expr){
       if(!pv) continue;
       *(pv++) = '\0';
       if(!tcstricmp(elem, "host") || !tcstricmp(elem, "name")){
-        tcfree(host);
+        free(host);
         host = ttbreakservexpr(pv, NULL);
       } else if(!tcstricmp(elem, "port")){
         port = tcatoi(pv);
@@ -181,7 +181,7 @@ bool tcrdbopen2(TCRDB *rdb, const char *expr){
   }
   if(tout > 0) tcrdbtune(rdb, tout, RDBTRECON);
   if(!tcrdbopen(rdb, host, port)) err = true;
-  tcfree(host);
+  free(host);
   return !err;
 }
 
@@ -472,7 +472,7 @@ bool tcrdbsetmst2(TCRDB *rdb, const char *expr, uint64_t ts, int opts){
   int port;
   char *host = ttbreakservexpr(expr, &port);
   if(!tcrdbsetmst(rdb, host, port, ts, opts)) err = true;
-  tcfree(host);
+  free(host);
   return !err;
 }
 
@@ -678,7 +678,7 @@ static bool tcrdbopenimpl(TCRDB *rdb, const char *host, int port){
     tcrdbsetecode(rdb, TTEREFUSED);
     return false;
   }
-  if(rdb->host) tcfree(rdb->host);
+  if(rdb->host) free(rdb->host);
   rdb->host = tcstrdup(host);
   rdb->port = port;
   rdb->expr = tcsprintf("%s:%d", host, port);
@@ -703,8 +703,8 @@ static bool tcrdbcloseimpl(TCRDB *rdb){
     tcrdbsetecode(rdb, TTEMISC);
     err = true;
   }
-  tcfree(rdb->expr);
-  tcfree(rdb->host);
+  free(rdb->expr);
+  free(rdb->host);
   rdb->expr = NULL;
   rdb->host = NULL;
   rdb->port = -1;
@@ -1040,7 +1040,7 @@ static void *tcrdbgetimpl(TCRDB *rdb, const void *kbuf, int ksiz, int *sp){
           *sp = vsiz;
         } else {
           tcrdbsetecode(rdb, TTERECV);
-          tcfree(vbuf);
+          free(vbuf);
           vbuf = NULL;
         }
       } else {
@@ -1110,7 +1110,7 @@ static bool tcrdbmgetimpl(TCRDB *rdb, TCMAP *recs){
             tcrdbsetecode(rdb, TTERECV);
             err = true;
           }
-          if(rbuf != stack) tcfree(rbuf);
+          if(rbuf != stack) free(rbuf);
         }
       } else {
         tcrdbsetecode(rdb, TTERECV);
@@ -1235,7 +1235,7 @@ static void *tcrdbiternextimpl(TCRDB *rdb, int *sp){
           *sp = vsiz;
         } else {
           tcrdbsetecode(rdb, TTERECV);
-          tcfree(vbuf);
+          free(vbuf);
           vbuf = NULL;
         }
       } else {
@@ -1299,7 +1299,7 @@ static TCLIST *tcrdbfwmkeysimpl(TCRDB *rdb, const void *pbuf, int psiz, int max)
           } else {
             tcrdbsetecode(rdb, TTERECV);
           }
-          if(kbuf != (char *)stack) tcfree(kbuf);
+          if(kbuf != (char *)stack) free(kbuf);
         }
       } else {
         tcrdbsetecode(rdb, TTERECV);
@@ -1471,7 +1471,7 @@ static void *tcrdbextimpl(TCRDB *rdb, const char *name, int opts,
           *sp = xsiz;
         } else {
           tcrdbsetecode(rdb, TTERECV);
-          tcfree(xbuf);
+          free(xbuf);
           xbuf = NULL;
         }
       } else {
@@ -1918,7 +1918,7 @@ static TCLIST *tcrdbmiscimpl(TCRDB *rdb, const char *name, int opts, const TCLIS
             tcrdbsetecode(rdb, TTERECV);
             err = true;
           }
-          if(ebuf != stack) tcfree(ebuf);
+          if(ebuf != stack) free(ebuf);
         }
       } else {
         tcrdbsetecode(rdb, TTERECV);

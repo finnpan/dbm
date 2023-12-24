@@ -493,7 +493,7 @@ static int proc(const char *dbname, const char *host, int port, int thnum, int t
     char *numstr = tcreadfile(pidpath, -1, NULL);
     if(numstr && kl){
       int64_t pid = tcatoi(numstr);
-      tcfree(numstr);
+      free(numstr);
       ttservlog(g_serv, TTLOGINFO,
                 "warning: killing the process %lld with SIGTERM", (long long)pid);
       if(kill(pid, SIGTERM) != 0) ttservlog(g_serv, TTLOGERROR, "kill failed");
@@ -501,7 +501,7 @@ static int proc(const char *dbname, const char *host, int port, int thnum, int t
       while(true){
         tcsleep(0.1);
         if((numstr = tcreadfile(pidpath, -1, NULL)) != NULL){
-          tcfree(numstr);
+          free(numstr);
         } else {
           break;
         }
@@ -517,7 +517,7 @@ static int proc(const char *dbname, const char *host, int port, int thnum, int t
     }
     if(numstr){
       int64_t pid = tcatoi(numstr);
-      tcfree(numstr);
+      free(numstr);
       ttservlog(g_serv, TTLOGERROR, "the process %lld may be already running", (long long)pid);
       return 1;
     }
@@ -769,7 +769,7 @@ static int proc(const char *dbname, const char *host, int port, int thnum, int t
         ttservlog(g_serv, TTLOGERROR, "scrextdel failed");
       }
     }
-    tcfree(pcargs);
+    free(pcargs);
   }
   for(int i = 0; i < RECMTXNUM; i++){
     if(pthread_mutex_destroy(targ.rmtxs + i) != 0)
@@ -787,11 +787,11 @@ static int proc(const char *dbname, const char *host, int port, int thnum, int t
       if(pthread_mutex_destroy(scrlcks + i) != 0)
         ttservlog(g_serv, TTLOGERROR, "pthread_mutex_destroy failed");
     }
-    tcfree(scrlcks);
+    free(scrlcks);
   }
   if(scrlock) tcmdbdel(scrlock);
   if(scrstash) tcmdbdel(scrstash);
-  tcfree(counts);
+  free(counts);
   if(ulogpath && !tculogclose(ulog)){
     err = true;
     ttservlog(g_serv, TTLOGERROR, "tculogclose failed");
@@ -925,7 +925,7 @@ static void do_extpc(void *opq){
   void *scr = arg->scrext;
   int xsiz;
   char *xbuf = scrextcallmethod(scr, name, "", 0, "", 0, &xsiz);
-  tcfree(xbuf);
+  free(xbuf);
 }
 
 
@@ -1021,10 +1021,10 @@ static void do_task(TTSOCK *sock, void *opq, TTREQ *req){
     ttsockungetc(sock, c);
     char *line = ttsockgets2(sock);
     if(line){
-      pthread_cleanup_push(tcfree, line);
+      pthread_cleanup_push(free, line);
       int tnum;
       char **tokens = tokenize(line, &tnum);
-      pthread_cleanup_push(tcfree, tokens);
+      pthread_cleanup_push(free, tokens);
       if(tnum > 0){
         const char *cmd = tokens[0];
         if(!strcmp(cmd, "set")){
@@ -1398,7 +1398,7 @@ static void do_get(TTSOCK *sock, TASKARG *arg, TTREQ *req){
       num = htonl((uint32_t)vsiz);
       memcpy(rbuf + sizeof(uint8_t), &num, sizeof(uint32_t));
       memcpy(rbuf + sizeof(uint8_t) + sizeof(uint32_t), vbuf, vsiz);
-      tcfree(vbuf);
+      free(vbuf);
       if(ttsocksend(sock, rbuf, rsiz)){
         req->keep = true;
       } else {
@@ -1466,7 +1466,7 @@ static void do_mget(TTSOCK *sock, TASKARG *arg, TTREQ *req){
           tcxstrcat(xstr, &num, sizeof(num));
           tcxstrcat(xstr, kbuf, ksiz);
           tcxstrcat(xstr, vbuf, vsiz);
-          tcfree(vbuf);
+          free(vbuf);
           rnum++;
         }
       }
@@ -1580,7 +1580,7 @@ static void do_iternext(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     num = htonl((uint32_t)vsiz);
     memcpy(rbuf + sizeof(uint8_t), &num, sizeof(uint32_t));
     memcpy(rbuf + sizeof(uint8_t) + sizeof(uint32_t), vbuf, vsiz);
-    tcfree(vbuf);
+    free(vbuf);
     if(ttsocksend(sock, rbuf, rsiz)){
       req->keep = true;
     } else {
@@ -1824,7 +1824,7 @@ static void do_ext(TTSOCK *sock, TASKARG *arg, TTREQ *req){
       num = htonl((uint32_t)xsiz);
       memcpy(rbuf + sizeof(uint8_t), &num, sizeof(uint32_t));
       memcpy(rbuf + sizeof(uint8_t) + sizeof(uint32_t), xbuf, xsiz);
-      tcfree(xbuf);
+      free(xbuf);
       if(ttsocksend(sock, rbuf, rsiz)){
         req->keep = true;
       } else {
@@ -2623,8 +2623,8 @@ static void do_mc_prepend(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens,
         memcpy(nbuf + vsiz, obuf, osiz);
         tculogadbput(ulog, sid, 0, adb, kbuf, ksiz, nbuf, vsiz + osiz);
         len = sprintf(stack, "STORED\r\n");
-        tcfree(nbuf);
-        tcfree(obuf);
+        free(nbuf);
+        free(obuf);
       } else {
         arg->counts[TTSEQNUM*req->idx+TTSEQPUTMISS]++;
         len = sprintf(stack, "NOT_STORED\r\n");
@@ -2672,7 +2672,7 @@ static void do_mc_get(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, int
       tcxstrprintf(xstr, "VALUE %s 0 %d\r\n", kbuf, vsiz);
       tcxstrcat(xstr, vbuf, vsiz);
       tcxstrcat(xstr, "\r\n", 2);
-      tcfree(vbuf);
+      free(vbuf);
     } else {
       arg->counts[TTSEQNUM*req->idx+TTSEQGETMISS]++;
     }
@@ -2763,7 +2763,7 @@ static void do_mc_incr(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, in
         len = sprintf(stack, "SERVER_ERROR unexpected\r\n");
         ttservlog(g_serv, TTLOGERROR, "do_mc_incr: operation failed");
       }
-      tcfree(vbuf);
+      free(vbuf);
     } else {
       len = sprintf(stack, "NOT_FOUND\r\n");
     }
@@ -2819,7 +2819,7 @@ static void do_mc_decr(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, in
         len = sprintf(stack, "SERVER_ERROR unexpected\r\n");
         ttservlog(g_serv, TTLOGERROR, "do_mc_decr: operation failed");
       }
-      tcfree(vbuf);
+      free(vbuf);
     } else {
       len = sprintf(stack, "NOT_FOUND\r\n");
     }
@@ -2993,7 +2993,7 @@ static void do_http_get(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const c
       tcxstrprintf(xstr, "Content-Length: %d\r\n", vsiz);
       tcxstrprintf(xstr, "\r\n");
       tcxstrcat(xstr, vbuf, vsiz);
-      tcfree(vbuf);
+      free(vbuf);
     } else {
       arg->counts[TTSEQNUM*req->idx+TTSEQGETMISS]++;
       int len = sprintf(line, "Not Found\n");
@@ -3303,7 +3303,7 @@ static void do_http_post(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const 
           tcxstrprintf(xstr, "Content-Length: %d\r\n", xsiz);
           tcxstrprintf(xstr, "\r\n");
           tcxstrcat(xstr, xbuf, xsiz);
-          tcfree(xbuf);
+          free(xbuf);
         } else {
           int len = sprintf(line, "Internal Server Error\n");
           tcxstrprintf(xstr, "HTTP/1.1 500 Internal Server Error\r\n");
@@ -3339,7 +3339,7 @@ static void do_http_post(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const 
             tcxstrprintf(rbuf, "res%d=", i + 1);
             char *enc = tcurlencode(ebuf, esiz);
             tcxstrcat2(rbuf, enc);
-            tcfree(enc);
+            free(enc);
           }
           tcxstrprintf(xstr, "HTTP/1.1 200 OK\r\n");
           tcxstrprintf(xstr, "Content-Type: application/x-www-form-urlencoded\r\n");
