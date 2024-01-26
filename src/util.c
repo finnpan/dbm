@@ -14,8 +14,7 @@
  *************************************************************************************************/
 
 
-#include "tcutil.h"
-#include "conf.h"
+#include "util.h"
 
 
 
@@ -5465,5 +5464,6 @@ void tcreadvnumbuf64 (const char* TC_buf, int TC_step, uint64_t* TC_num){
     }
     TC_step = _TC_i + 1;
 }
+
 
 // END OF FILE

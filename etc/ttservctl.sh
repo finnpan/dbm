@@ -7,8 +7,8 @@
 
 # configuration variables
 prog="ttservctl"
-cmd="./ttserver"
-basedir="/var/ttserver"
+cmd="./server"
+basedir="/var/server"
 port="1978"
 pidfile="$basedir/pid"
 #logfile="$basedir/log"

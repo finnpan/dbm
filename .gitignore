@@ -5,7 +5,5 @@
 
 *vscode*
 
-tcrmgr
-ttserver
-tculmgr
-
+client
+server

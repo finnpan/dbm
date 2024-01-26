@@ -13,11 +13,9 @@
  * Boston, MA 02111-1307 USA.
  *************************************************************************************************/
 
-
-#include <ttutil.h>
-#include <tculog.h>
-#include <tcrdb.h>
-#include "conf.h"
+#include "util.h"
+#include "db.h"
+#include "net.h"
 
 #define DEFTHNUM       8                 // default thread number
 #define DEFPIDPATH     "ttserver.pid"    // default name of the PID file
@@ -290,12 +288,6 @@ int main(int argc, char **argv){
         rtspath = argv[i];
       } else if(!strcmp(argv[i], "-rcc")){
         ropts |= RDBROCHKCON;
-      } else if(!strcmp(argv[i], "-skel")){
-        if(++i >= argc) usage();
-        skelpath = argv[i];
-      } else if(!strcmp(argv[i], "-mul")){
-        if(++i >= argc) usage();
-        mulnum = tcatoi(argv[i]);
       } else if(!strcmp(argv[i], "-ext")){
         if(++i >= argc) usage();
         extpath = argv[i];
@@ -346,7 +338,7 @@ static void usage(void){
   fprintf(stderr, "usage:\n");
   fprintf(stderr, "  %s [-host name] [-port num] [-thnum num] [-tout num]"
           " [-dmn] [-pid path] [-kl] [-log path] [-ld|-le] [-ulog path] [-ulim num] [-uas]"
-          " [-sid num] [-mhost name] [-mport num] [-rts path] [-rcc] [-skel name] [-mul num]"
+          " [-sid num] [-mhost name] [-mport num] [-rts path] [-rcc]"
           " [-ext path] [-extpc name period] [-mask expr] [-unmask expr] [dbname]\n",
           g_progname);
   fprintf(stderr, "\n");
@@ -586,44 +578,10 @@ static int proc(const char *dbname, const char *host, int port, int thnum, int t
     ttservlog(g_serv, TTLOGERROR, "getrlimit failed");
   }
   bool err = false;
-  ADBSKEL skel;
-  memset(&skel, 0, sizeof(skel));
-  void *skellib = NULL;
-  if(skelpath){
-    ttservlog(g_serv, TTLOGSYSTEM, "skeleton database library: %s", skelpath);
-    skellib = dlopen(skelpath, RTLD_LAZY);
-    if(!skellib){
-      err = true;
-      ttservlog(g_serv, TTLOGERROR, "dlopen failed: %s", dlerror());
-    }
-  }
+  assert(!skelpath);
   TCADB *adb = tcadbnew();
-  if(skellib){
-    void *initsym = dlsym(skellib, "initialize");
-    if(initsym){
-      bool (*initfunc)(ADBSKEL *);
-      memcpy(&initfunc, &initsym, sizeof(initsym));
-      if(initfunc(&skel)){
-        if(!tcadbsetskel(adb, &skel)){
-          if(skel.opq && skel.del) skel.del(skel.opq);
-          err = true;
-          ttservlog(g_serv, TTLOGERROR, "tcadbsetskel failed");
-        }
-      } else {
-        if(skel.opq && skel.del) skel.del(skel.opq);
-        err = true;
-        ttservlog(g_serv, TTLOGERROR, "initialize failed");
-      }
-    } else {
-      err = true;
-      ttservlog(g_serv, TTLOGERROR, "dlsym failed: %s", dlerror());
-    }
-  }
   ttservlog(g_serv, TTLOGSYSTEM, "opening the database: %s", dbname);
-  if(mulnum > 0 && !tcadbsetskelmulti(adb, mulnum)){
-    err = true;
-    ttservlog(g_serv, TTLOGERROR, "tcadbsetskelmulti failed");
-  }
+  assert(mulnum == 0);
   if(!tcadbopen(adb, dbname)){
     err = true;
     ttservlog(g_serv, TTLOGERROR, "tcadbopen failed");
@@ -798,10 +756,6 @@ static int proc(const char *dbname, const char *host, int port, int thnum, int t
   }
   tculogdel(ulog);
   tcadbdel(adb);
-  if(skellib && dlclose(skellib) != 0){
-    err = true;
-    ttservlog(g_serv, TTLOGERROR, "dlclose failed");
-  }
   if(pidpath && unlink(pidpath) != 0){
     err = true;
     ttservlog(g_serv, TTLOGERROR, "unlink failed");
@@ -2120,11 +2074,10 @@ static void do_stat(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     wp += sprintf(wp, "time\t%.6f\n", now);
     wp += sprintf(wp, "pid\t%lld\n", (long long)getpid());
     wp += sprintf(wp, "sid\t%d\n", arg->sid);
-    switch(tcadbomode(adb)){
+    switch(adb->omode){
       case ADBOVOID: wp += sprintf(wp, "type\tvoid\n"); break;
       case ADBOMDB: wp += sprintf(wp, "type\ton-memory hash\n"); break;
       case ADBOHDB: wp += sprintf(wp, "type\thash\n"); break;
-      case ADBOSKEL: wp += sprintf(wp, "type\tskeleton\n"); break;
     }
     const char *path = tcadbpath(adb);
     if(path) wp += sprintf(wp, "path\t%s\n", path);
@@ -3501,11 +3454,10 @@ static void do_http_options(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, con
     tcxstrprintf(xstr, "X-TT-TIME: %.6f\r\n", now);
     tcxstrprintf(xstr, "X-TT-PID: %lld\r\n", (long long)getpid());
     tcxstrprintf(xstr, "X-TT-SID: %d\r\n", arg->sid);
-    switch(tcadbomode(adb)){
+    switch(adb->omode){
       case ADBOVOID: tcxstrprintf(xstr, "X-TT-TYPE: void\r\n"); break;
       case ADBOMDB: tcxstrprintf(xstr, "X-TT-TYPE: on-memory hash\r\n"); break;
       case ADBOHDB: tcxstrprintf(xstr, "X-TT-TYPE: hash\r\n"); break;
-      case ADBOSKEL: tcxstrprintf(xstr, "X-TT-TYPE: skeleton\r\n"); break;
     }
     const char *path = tcadbpath(adb);
     if(path) tcxstrprintf(xstr, "X-TT-PATH: %s\r\n", path);

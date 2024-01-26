@@ -13,10 +13,10 @@
  * Boston, MA 02111-1307 USA.
  *************************************************************************************************/
 
+#include "util.h"
+#include "db.h"
+#include "net.h"
 
-#include <tculog.h>
-#include <tcrdb.h>
-#include "conf.h"
 
 #define REQHEADMAX     32                // maximum number of request headers of HTTP
 #define MINIBNUM       31                // bucket number of map for trivial use

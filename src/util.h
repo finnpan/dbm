@@ -14,27 +14,156 @@
  *************************************************************************************************/
 
 
-#ifndef _TCUTIL_H                        /* duplication check */
-#define _TCUTIL_H
+#ifndef _UTIL_H                        /* duplication check */
+#define _UTIL_H
 
 #if defined(__cplusplus)
-#define __TCUTIL_CLINKAGEBEGIN extern "C" {
-#define __TCUTIL_CLINKAGEEND }
+#define __UTIL_CLINKAGEBEGIN extern "C" {
+#define __UTIL_CLINKAGEEND }
 #else
-#define __TCUTIL_CLINKAGEBEGIN
-#define __TCUTIL_CLINKAGEEND
+#define __UTIL_CLINKAGEBEGIN
+#define __UTIL_CLINKAGEEND
 #endif
-__TCUTIL_CLINKAGEBEGIN
+__UTIL_CLINKAGEBEGIN
 
 
-#include <stdlib.h>
-#if ! defined(__cplusplus)
-#include <stdbool.h>
+
+
+/*************************************************************************************************
+ * system discrimination
+ *************************************************************************************************/
+
+
+#if defined(__linux__)
+#define _SYS_LINUX_
+#define TCSYSNAME   "Linux"
 #endif
-#include <stdint.h>
-#include <time.h>
+
+#if !defined(_SYS_LINUX_)
+#error =======================================
+#error Your platform is not supported.  Sorry.
+#error =======================================
+#endif
+
+
+
+/*************************************************************************************************
+ * common settings
+ *************************************************************************************************/
+
+
+#if defined(NDEBUG)
+#define TCDODEBUG(TC_expr) \
+  do { \
+  } while(false)
+#else
+#define TCDODEBUG(TC_expr) \
+  do { \
+    TC_expr; \
+  } while(false)
+#endif
+
+
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+
+#define TCBIGEND       0
+
+#define htonll(TT_num)  __bswap_64(TT_num)
+#define ntohll(TT_num)  __bswap_64(TT_num)
+
+#define TCHTOIS(TC_num)   (TC_num)
+#define TCHTOIL(TC_num)   (TC_num)
+#define TCHTOILL(TC_num)  (TC_num)
+#define TCITOHS(TC_num)   (TC_num)
+#define TCITOHL(TC_num)   (TC_num)
+#define TCITOHLL(TC_num)  (TC_num)
+
+#else
+
+#define TCBIGEND       1
+
+#define htonll(TT_num) TT_num
+#define ntohll(TT_num) TT_num
+
+#define TCHTOIS(TC_num)   __bswap_16(TC_num)
+#define TCITOHS(TC_num)   __bswap_16(TC_num)
+#define TCHTOIL(TC_num)   __bswap_32(TC_num)
+#define TCITOHL(TC_num)   __bswap_32(TC_num)
+#define TCHTOILL(TC_num)  __bswap_64(TC_num)
+#define TCITOHLL(TC_num)  __bswap_64(TC_num)
+
+#endif
+
+
+
+/*************************************************************************************************
+ * general headers
+ *************************************************************************************************/
+
+
+#include <assert.h>
+#include <ctype.h>
+#include <errno.h>
+#include <float.h>
 #include <limits.h>
+#include <locale.h>
 #include <math.h>
+#include <setjmp.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <string.h>
+#include <time.h>
+#include <inttypes.h>
+#include <stdbool.h>
+#include <stdint.h>
+
+#include <unistd.h>
+#include <sys/param.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <sys/time.h>
+#include <sys/times.h>
+#include <sys/wait.h>
+#include <sys/resource.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <regex.h>
+#include <glob.h>
+
+#include <pthread.h>
+#include <sched.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/select.h>
+#include <aio.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <dlfcn.h>
+#include <sys/epoll.h>
+
+
+
+/*************************************************************************************************
+ * miscellaneous macros
+ *************************************************************************************************/
+
+
+#define MYPATHCHR       '/'
+#define MYPATHSTR       "/"
+#define MYEXTCHR        '.'
+#define MYEXTSTR        "."
+#define MYCDIRSTR       "."
+#define MYPDIRSTR       ".."
+
+
+#define TCNUMBUFSIZ    32                // size of a buffer for a number
+
 
 
 
@@ -1635,8 +1764,6 @@ int tcbitstrmnum(TCBITSTRM *bitstrm);
  *************************************************************************************************/
 
 
-#include <stdio.h>
-
 #define _TC_LIBVER     911
 #define _TC_FORMATVER  "1.0"
 
@@ -1764,7 +1891,7 @@ void tcreadvnumbuf32 (const char* TC_buf, int TC_step, uint32_t* TC_num);
 void tcreadvnumbuf64 (const char* TC_buf, int TC_step, uint64_t* TC_num);
 
 
-__TCUTIL_CLINKAGEEND
+__UTIL_CLINKAGEEND
 #endif                                   /* duplication check */
 
 
