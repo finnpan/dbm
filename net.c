@@ -15,7 +15,6 @@
 
 
 #include "util.h"
-#include "db.h"
 #include "net.h"
 
 
@@ -545,7 +544,6 @@ bool ttsockgets(TTSOCK *sock, char *buf, int size){
 char *ttsockgets2(TTSOCK *sock){
   assert(sock);
   bool err = false;
-  (void)(err);
   TCXSTR *xstr = tcxstrnew2(SOCKLINEBUFSIZ);
   pthread_cleanup_push((void (*)(void *))tcxstrdel, xstr);
   int size = 0;
@@ -1468,11 +1466,7 @@ const char *ttcmdidtostr(int id){
     case TTCMDFWMKEYS: return "fwmkeys";
     case TTCMDADDINT: return "addint";
     case TTCMDADDDOUBLE: return "adddouble";
-    case TTCMDEXT: return "ext";
-    case TTCMDSYNC: return "sync";
-    case TTCMDOPTIMIZE: return "optimize";
     case TTCMDVANISH: return "vanish";
-    case TTCMDCOPY: return "copy";
     case TTCMDRESTORE: return "restore";
     case TTCMDSETMST: return "setmst";
     case TTCMDRNUM: return "rnum";
@@ -1499,7 +1493,7 @@ typedef struct {                         // type of structure for a putshl opera
 
 /* private function prototypes */
 static bool tculogflushaiocbp(struct aiocb *aiocbp);
-static void *tculogadbputshlproc(const void *vbuf, int vsiz, int *sp, PUTSHLOP *op);
+static void *tculogdbputshlproc(const void *vbuf, int vsiz, int *sp, PUTSHLOP *op);
 
 
 
@@ -1942,14 +1936,14 @@ const void *tculrdread(TCULRD *ulrd, int *sp, uint64_t *tsp, uint32_t *sidp, uin
 }
 
 
-/* Store a record into an abstract database object. */
-bool tculogadbput(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+/* Store a record into a database object. */
+bool tculogdbput(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                   const void *kbuf, int ksiz, const void *vbuf, int vsiz){
-  assert(ulog && adb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0);
+  assert(ulog && mdb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0);
   bool err = false;
   int rmidx = tculogrmtxidx(ulog, kbuf, ksiz);
   bool dolog = tculogbegin(ulog, rmidx);
-  if(!tcadbput(adb, kbuf, ksiz, vbuf, vsiz)) err = true;
+  tcmdbput(mdb, kbuf, ksiz, vbuf, vsiz);
   if(dolog){
     unsigned char mstack[TTIOBUFSIZ];
     int msiz = sizeof(uint8_t) * 3 + sizeof(uint32_t) * 2 + ksiz + vsiz;
@@ -1977,14 +1971,14 @@ bool tculogadbput(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
 }
 
 
-/* Store a new record into an abstract database object. */
-bool tculogadbputkeep(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+/* Store a new record into a database object. */
+bool tculogdbputkeep(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                       const void *kbuf, int ksiz, const void *vbuf, int vsiz){
-  assert(ulog && adb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0);
+  assert(ulog && mdb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0);
   bool err = false;
   int rmidx = tculogrmtxidx(ulog, kbuf, ksiz);
   bool dolog = tculogbegin(ulog, rmidx);
-  if(!tcadbputkeep(adb, kbuf, ksiz, vbuf, vsiz)) err = true;
+  if(!tcmdbputkeep(mdb, kbuf, ksiz, vbuf, vsiz)) err = true;
   if(dolog){
     unsigned char mstack[TTIOBUFSIZ];
     int msiz = sizeof(uint8_t) * 3 + sizeof(uint32_t) * 2 + ksiz + vsiz;
@@ -2012,14 +2006,14 @@ bool tculogadbputkeep(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
 }
 
 
-/* Concatenate a value at the end of the existing record in an abstract database object. */
-bool tculogadbputcat(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+/* Concatenate a value at the end of the existing record in a database object. */
+bool tculogdbputcat(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                      const void *kbuf, int ksiz, const void *vbuf, int vsiz){
-  assert(ulog && adb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0);
+  assert(ulog && mdb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0);
   bool err = false;
   int rmidx = tculogrmtxidx(ulog, kbuf, ksiz);
   bool dolog = tculogbegin(ulog, rmidx);
-  if(!tcadbputcat(adb, kbuf, ksiz, vbuf, vsiz)) err = true;
+  tcmdbputcat(mdb, kbuf, ksiz, vbuf, vsiz);
   if(dolog){
     unsigned char mstack[TTIOBUFSIZ];
     int msiz = sizeof(uint8_t) * 3 + sizeof(uint32_t) * 2 + ksiz + vsiz;
@@ -2048,9 +2042,9 @@ bool tculogadbputcat(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
 
 
 /* Concatenate a value at the end of the existing record and shift it to the left. */
-bool tculogadbputshl(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+bool tculogdbputshl(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                      const void *kbuf, int ksiz, const void *vbuf, int vsiz, int width){
-  assert(ulog && adb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0 && width >= 0);
+  assert(ulog && mdb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0 && width >= 0);
   bool err = false;
   int rmidx = tculogrmtxidx(ulog, kbuf, ksiz);
   bool dolog = tculogbegin(ulog, rmidx);
@@ -2058,7 +2052,7 @@ bool tculogadbputshl(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
   op.vbuf = vbuf;
   op.vsiz = vsiz;
   op.width = width;
-  if(!tcadbputproc(adb, kbuf, ksiz, vbuf, vsiz, (TCPDPROC)tculogadbputshlproc, &op))
+  if(!tcmdbputproc(mdb, kbuf, ksiz, vbuf, vsiz, (TCPDPROC)tculogdbputshlproc, &op))
     err = true;
   if(dolog){
     unsigned char mstack[TTIOBUFSIZ];
@@ -2090,14 +2084,14 @@ bool tculogadbputshl(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
 }
 
 
-/* Remove a record of an abstract database object. */
-bool tculogadbout(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+/* Remove a record of a database object. */
+bool tculogdbout(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                   const void *kbuf, int ksiz){
-  assert(ulog && adb && kbuf && ksiz >= 0);
+  assert(ulog && mdb && kbuf && ksiz >= 0);
   bool err = false;
   int rmidx = tculogrmtxidx(ulog, kbuf, ksiz);
   bool dolog = tculogbegin(ulog, rmidx);
-  if(!tcadbout(adb, kbuf, ksiz)) err = true;
+  if(!tcmdbout(mdb, kbuf, ksiz)) err = true;
   if(dolog){
     unsigned char mstack[TTIOBUFSIZ];
     int msiz = sizeof(uint8_t) * 3 + sizeof(uint32_t) + ksiz;
@@ -2120,13 +2114,13 @@ bool tculogadbout(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
 }
 
 
-/* Add an integer to a record in an abstract database object. */
-int tculogadbaddint(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+/* Add an integer to a record in a database object. */
+int tculogdbaddint(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                     const void *kbuf, int ksiz, int num){
-  assert(ulog && adb && kbuf && ksiz >= 0);
+  assert(ulog && mdb && kbuf && ksiz >= 0);
   int rmidx = tculogrmtxidx(ulog, kbuf, ksiz);
   bool dolog = num != 0 && tculogbegin(ulog, rmidx);
-  int rnum = tcadbaddint(adb, kbuf, ksiz, num);
+  int rnum = tcmdbaddint(mdb, kbuf, ksiz, num);
   if(dolog){
     unsigned char mstack[TTIOBUFSIZ];
     int msiz = sizeof(uint8_t) * 3 + sizeof(uint32_t) * 2 + ksiz;
@@ -2152,13 +2146,13 @@ int tculogadbaddint(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
 }
 
 
-/* Add a real number to a record in an abstract database object. */
-double tculogadbadddouble(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+/* Add a real number to a record in a database object. */
+double tculogdbadddouble(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                           const void *kbuf, int ksiz, double num){
-  assert(ulog && adb && kbuf && ksiz >= 0);
+  assert(ulog && mdb && kbuf && ksiz >= 0);
   int rmidx = tculogrmtxidx(ulog, kbuf, ksiz);
   bool dolog = num != 0 && tculogbegin(ulog, rmidx);
-  double rnum = tcadbadddouble(adb, kbuf, ksiz, num);
+  double rnum = tcmdbadddouble(mdb, kbuf, ksiz, num);
   if(dolog){
     unsigned char mstack[TTIOBUFSIZ];
     int msiz = sizeof(uint8_t) * 3 + sizeof(uint32_t) + sizeof(uint64_t) * 2 + ksiz;
@@ -2183,60 +2177,12 @@ double tculogadbadddouble(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
 }
 
 
-/* Synchronize updated contents of an abstract database object with the file and the device. */
-bool tculogadbsync(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb){
-  assert(ulog && adb);
+/* Remove all records of a database object. */
+bool tculogdbvanish(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb){
+  assert(ulog && mdb);
   bool err = false;
   bool dolog = tculogbegin(ulog, -1);
-  if(!tcadbsync(adb)) err = true;
-  if(dolog){
-    unsigned char mbuf[sizeof(uint8_t)*3];
-    unsigned char *wp = mbuf;
-    *(wp++) = TTMAGICNUM;
-    *(wp++) = TTCMDSYNC;
-    *(wp++) = err ? 1 : 0;
-    if(!tculogwrite(ulog, 0, sid, mid, mbuf, wp - mbuf)) err = true;
-    tculogend(ulog, -1);
-  }
-  return !err;
-}
-
-
-/* Optimize the storage of an abstract database object. */
-bool tculogadboptimize(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb, const char *params){
-  assert(ulog && adb);
-  bool err = false;
-  bool dolog = tculogbegin(ulog, -1);
-  if(!tcadboptimize(adb, params)) err = true;
-  if(dolog){
-    int psiz = strlen(params);
-    unsigned char mstack[TTIOBUFSIZ];
-    int msiz = sizeof(uint8_t) * 3 + sizeof(uint32_t) + psiz;
-    unsigned char *mbuf = (msiz < TTIOBUFSIZ) ? mstack : tcmalloc(msiz + 1);
-    unsigned char *wp = mbuf;
-    *(wp++) = TTMAGICNUM;
-    *(wp++) = TTCMDOPTIMIZE;
-    uint32_t lnum;
-    lnum = htonl(psiz);
-    memcpy(wp, &lnum, sizeof(lnum));
-    wp += sizeof(lnum);
-    memcpy(wp, params, psiz);
-    wp += psiz;
-    *(wp++) = err ? 1 : 0;
-    if(!tculogwrite(ulog, 0, sid, mid, mbuf, msiz)) err = true;
-    if(mbuf != mstack) free(mbuf);
-    tculogend(ulog, -1);
-  }
-  return !err;
-}
-
-
-/* Remove all records of an abstract database object. */
-bool tculogadbvanish(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb){
-  assert(ulog && adb);
-  bool err = false;
-  bool dolog = tculogbegin(ulog, -1);
-  if(!tcadbvanish(adb)) err = true;
+  tcmdbvanish(mdb);
   if(dolog){
     unsigned char mbuf[sizeof(uint8_t)*3];
     unsigned char *wp = mbuf;
@@ -2250,12 +2196,12 @@ bool tculogadbvanish(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb){
 }
 
 
-/* Call a versatile function for miscellaneous operations of an abstract database object. */
-TCLIST *tculogadbmisc(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+/* Call a versatile function for miscellaneous operations of a database object. */
+TCLIST *tculogdbmisc(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                       const char *name, const TCLIST *args){
-  assert(ulog && adb && name && args);
+  assert(ulog && mdb && name && args);
   bool dolog = tculogbegin(ulog, -1);
-  TCLIST *rv = tcadbmisc(adb, name, args);
+  TCLIST *rv = tcmdbmisc(mdb, name, args);
   if(dolog){
     int nsiz = strlen(name);
     int anum = tclistnum(args);
@@ -2300,9 +2246,9 @@ TCLIST *tculogadbmisc(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
 }
 
 
-/* Restore an abstract database object. */
-bool tculogadbrestore(TCADB *adb, const char *path, uint64_t ts, bool con, TCULOG *ulog){
-  assert(adb && path);
+/* Restore a database object. */
+bool tculogdbrestore(TCMDB *mdb, const char *path, uint64_t ts, bool con, TCULOG *ulog){
+  assert(mdb && path);
   bool err = false;
   TCULOG *sulog = tculognew();
   if(tculogopen(sulog, path, 0)){
@@ -2314,7 +2260,7 @@ bool tculogadbrestore(TCADB *adb, const char *path, uint64_t ts, bool con, TCULO
       uint32_t rsid, rmid;
       while((rbuf = tculrdread(ulrd, &rsiz, &rts, &rsid, &rmid)) != NULL){
         bool cc;
-        if(!tculogadbredo(adb, rbuf, rsiz, ulog, rsid, rmid, &cc) || (con && !cc)){
+        if(!tculogdbredo(mdb, rbuf, rsiz, ulog, rsid, rmid, &cc) || (con && !cc)){
           err = true;
           break;
         }
@@ -2333,9 +2279,9 @@ bool tculogadbrestore(TCADB *adb, const char *path, uint64_t ts, bool con, TCULO
 
 
 /* Redo an update log message. */
-bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
+bool tculogdbredo(TCMDB *mdb, const char *ptr, int size, TCULOG *ulog,
                    uint32_t sid, uint32_t mid, bool *cp){
-  assert(adb && ptr && size >= 0);
+  assert(mdb && ptr && size >= 0);
   if(size < sizeof(uint8_t) * 3) return false;
   const unsigned char *rp = (unsigned char *)ptr;
   int magic = *(rp++);
@@ -2356,7 +2302,7 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
         memcpy(&vsiz, rp, sizeof(vsiz));
         vsiz = ntohl(vsiz);
         rp += sizeof(vsiz);
-        if(tculogadbput(ulog, sid, mid, adb, rp, ksiz, rp + ksiz, vsiz) != exp) *cp = false;
+        if(tculogdbput(ulog, sid, mid, mdb, rp, ksiz, rp + ksiz, vsiz) != exp) *cp = false;
       } else {
         err = true;
       }
@@ -2371,7 +2317,7 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
         memcpy(&vsiz, rp, sizeof(vsiz));
         vsiz = ntohl(vsiz);
         rp += sizeof(vsiz);
-        if(tculogadbputkeep(ulog, sid, mid, adb, rp, ksiz, rp + ksiz, vsiz) != exp) *cp = false;
+        if(tculogdbputkeep(ulog, sid, mid, mdb, rp, ksiz, rp + ksiz, vsiz) != exp) *cp = false;
       } else {
         err = true;
       }
@@ -2386,7 +2332,7 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
         memcpy(&vsiz, rp, sizeof(vsiz));
         vsiz = ntohl(vsiz);
         rp += sizeof(vsiz);
-        if(tculogadbputcat(ulog, sid, mid, adb, rp, ksiz, rp + ksiz, vsiz) != exp) *cp = false;
+        if(tculogdbputcat(ulog, sid, mid, mdb, rp, ksiz, rp + ksiz, vsiz) != exp) *cp = false;
       } else {
         err = true;
       }
@@ -2405,7 +2351,7 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
         memcpy(&width, rp, sizeof(width));
         width = ntohl(width);
         rp += sizeof(width);
-        if(tculogadbputshl(ulog, sid, mid, adb, rp, ksiz, rp + ksiz, vsiz, width) != exp)
+        if(tculogdbputshl(ulog, sid, mid, mdb, rp, ksiz, rp + ksiz, vsiz, width) != exp)
           *cp = false;
       } else {
         err = true;
@@ -2417,7 +2363,7 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
         memcpy(&ksiz, rp, sizeof(ksiz));
         ksiz = ntohl(ksiz);
         rp += sizeof(ksiz);
-        if(tculogadbout(ulog, sid, mid, adb, rp, ksiz) != exp) *cp = false;
+        if(tculogdbout(ulog, sid, mid, mdb, rp, ksiz) != exp) *cp = false;
       } else {
         err = true;
       }
@@ -2432,7 +2378,7 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
         memcpy(&num, rp, sizeof(num));
         num = ntohl(num);
         rp += sizeof(num);
-        int rnum = tculogadbaddint(ulog, sid, mid, adb, rp, ksiz, num);
+        int rnum = tculogdbaddint(ulog, sid, mid, mdb, rp, ksiz, num);
         if(exp && rnum == INT_MIN) *cp = false;
       } else {
         err = true;
@@ -2446,35 +2392,15 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
         rp += sizeof(ksiz);
         double num = ttunpackdouble((char *)rp);
         rp += sizeof(uint64_t) * 2;
-        double rnum = tculogadbadddouble(ulog, sid, mid, adb, rp, ksiz, num);
+        double rnum = tculogdbadddouble(ulog, sid, mid, mdb, rp, ksiz, num);
         if(exp && isnan(rnum)) *cp = false;
-      } else {
-        err = true;
-      }
-      break;
-    case TTCMDSYNC:
-      if(size == 0){
-        if(tculogadbsync(ulog, sid, mid, adb) != exp) *cp = false;
-      } else {
-        err = true;
-      }
-      break;
-    case TTCMDOPTIMIZE:
-      if(size >= sizeof(uint32_t)){
-        uint32_t psiz;
-        memcpy(&psiz, rp, sizeof(psiz));
-        psiz = ntohl(psiz);
-        rp += sizeof(psiz);
-        char *params = tcmemdup(rp, psiz);
-        if(tculogadboptimize(ulog, sid, mid, adb, params) != exp) *cp = false;
-        free(params);
       } else {
         err = true;
       }
       break;
     case TTCMDVANISH:
       if(size == 0){
-        if(tculogadbvanish(ulog, sid, mid, adb) != exp) *cp = false;
+        if(tculogdbvanish(ulog, sid, mid, mdb) != exp) *cp = false;
       } else {
         err = true;
       }
@@ -2500,7 +2426,7 @@ bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
           tclistpush(args, rp, esiz);
           rp += esiz;
         }
-        TCLIST *res = tculogadbmisc(ulog, sid, mid, adb, name, args);
+        TCLIST *res = tculogdbmisc(ulog, sid, mid, mdb, name, args);
         if(res){
           if(!exp) *cp = false;
           tclistdel(res);
@@ -2656,7 +2582,7 @@ static bool tculogflushaiocbp(struct aiocb *aiocbp){
    value is assigned.
    `op' specifies the pointer to the optional opaque object.
    The return value is the pointer to the result object. */
-static void *tculogadbputshlproc(const void *vbuf, int vsiz, int *sp, PUTSHLOP *op){
+static void *tculogdbputshlproc(const void *vbuf, int vsiz, int *sp, PUTSHLOP *op){
   assert(vbuf && vsiz >= 0 && sp && op);
   int rsiz = tclmin(vsiz + op->vsiz, op->width);
   char *rbuf = tcmalloc(rsiz + 1);
@@ -2710,12 +2636,7 @@ static void *tcrdbiternextimpl(TCRDB *rdb, int *sp);
 static TCLIST *tcrdbfwmkeysimpl(TCRDB *rdb, const void *pbuf, int psiz, int max);
 static int tcrdbaddintimpl(TCRDB *rdb, const void *kbuf, int ksiz, int num);
 static double tcrdbadddoubleimpl(TCRDB *rdb, const void *kbuf, int ksiz, double num);
-static void *tcrdbextimpl(TCRDB *rdb, const char *name, int opts,
-                          const void *kbuf, int ksiz, const void *vbuf, int vsiz, int *sp);
-static bool tcrdbsyncimpl(TCRDB *rdb);
-static bool tcrdboptimizeimpl(TCRDB *rdb, const char *params);
 static bool tcrdbvanishimpl(TCRDB *rdb);
-static bool tcrdbcopyimpl(TCRDB *rdb, const char *path);
 static bool tcrdbrestoreimpl(TCRDB *rdb, const char *path, uint64_t ts, int opts);
 static bool tcrdbsetmstimpl(TCRDB *rdb, const char *host, int port, uint64_t ts, int opts);
 const char *tcrdbexprimpl(TCRDB *rdb);
@@ -3036,43 +2957,6 @@ double tcrdbadddouble(TCRDB *rdb, const void *kbuf, int ksiz, double num){
 }
 
 
-/* Call a function of the scripting language extension. */
-void *tcrdbext(TCRDB *rdb, const char *name, int opts,
-               const void *kbuf, int ksiz, const void *vbuf, int vsiz, int *sp){
-  assert(rdb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0);
-  if(!tcrdblockmethod(rdb)) return NULL;
-  void *rv;
-  pthread_cleanup_push((void (*)(void *))tcrdbunlockmethod, rdb);
-  rv = tcrdbextimpl(rdb, name, opts, kbuf, ksiz, vbuf, vsiz, sp);
-  pthread_cleanup_pop(1);
-  return rv;
-}
-
-
-/* Synchronize updated contents of a remote database object with the file and the device. */
-bool tcrdbsync(TCRDB *rdb){
-  assert(rdb);
-  if(!tcrdblockmethod(rdb)) return false;
-  bool rv;
-  pthread_cleanup_push((void (*)(void *))tcrdbunlockmethod, rdb);
-  rv = tcrdbsyncimpl(rdb);
-  pthread_cleanup_pop(1);
-  return rv;
-}
-
-
-/* Optimize the storage of a remove database object. */
-bool tcrdboptimize(TCRDB *rdb, const char *params){
-  assert(rdb);
-  if(!tcrdblockmethod(rdb)) return false;
-  bool rv;
-  pthread_cleanup_push((void (*)(void *))tcrdbunlockmethod, rdb);
-  rv = tcrdboptimizeimpl(rdb, params);
-  pthread_cleanup_pop(1);
-  return rv;
-}
-
-
 /* Remove all records of a remote database object. */
 bool tcrdbvanish(TCRDB *rdb){
   assert(rdb);
@@ -3080,18 +2964,6 @@ bool tcrdbvanish(TCRDB *rdb){
   bool rv;
   pthread_cleanup_push((void (*)(void *))tcrdbunlockmethod, rdb);
   rv = tcrdbvanishimpl(rdb);
-  pthread_cleanup_pop(1);
-  return rv;
-}
-
-
-/* Copy the database file of a remote database object. */
-bool tcrdbcopy(TCRDB *rdb, const char *path){
-  assert(rdb && path);
-  if(!tcrdblockmethod(rdb)) return false;
-  bool rv;
-  pthread_cleanup_push((void (*)(void *))tcrdbunlockmethod, rdb);
-  rv = tcrdbcopyimpl(rdb, path);
   pthread_cleanup_pop(1);
   return rv;
 }
@@ -3133,7 +3005,7 @@ bool tcrdbsetmst2(TCRDB *rdb, const char *expr, uint64_t ts, int opts){
 }
 
 
-/* Get the simple server expression of an abstract database object. */
+/* Get the simple server expression of a database object. */
 const char *tcrdbexpr(TCRDB *rdb){
   assert(rdb);
   if(!tcrdblockmethod(rdb)) return NULL;
@@ -4067,153 +3939,6 @@ static double tcrdbadddoubleimpl(TCRDB *rdb, const void *kbuf, int ksiz, double 
 }
 
 
-/* Call a function of the scripting language extension.
-   `rdb' specifies the remote database object.
-   `name' specifies the function name.
-   `opts' specifies options by bitwise-or.
-   `kbuf' specifies the pointer to the region of the key.
-   `ksiz' specifies the size of the region of the key.
-   `vbuf' specifies the pointer to the region of the value.
-   `vsiz' specifies the size of the region of the value.
-   `sp' specifies the pointer to the variable into which the size of the region of the return
-   value is assigned.
-   If successful, the return value is the pointer to the region of the value of the response. */
-static void *tcrdbextimpl(TCRDB *rdb, const char *name, int opts,
-                          const void *kbuf, int ksiz, const void *vbuf, int vsiz, int *sp){
-  assert(rdb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0);
-  if(rdb->fd < 0){
-    if(!rdb->host || !(rdb->opts & RDBTRECON)){
-      tcrdbsetecode(rdb, TTEINVALID);
-      return NULL;
-    }
-    if(!tcrdbreconnect(rdb)) return NULL;
-  }
-  char *xbuf = NULL;
-  int nsiz = strlen(name);
-  int rsiz = 2 + sizeof(uint32_t) * 4 + nsiz + ksiz + vsiz;
-  unsigned char stack[TTIOBUFSIZ];
-  unsigned char *buf = (rsiz < TTIOBUFSIZ) ? stack : tcmalloc(rsiz);
-  pthread_cleanup_push(free, (buf == stack) ? NULL : buf);
-  unsigned char *wp = buf;
-  *(wp++) = TTMAGICNUM;
-  *(wp++) = TTCMDEXT;
-  uint32_t num;
-  num = htonl((uint32_t)nsiz);
-  memcpy(wp, &num, sizeof(uint32_t));
-  wp += sizeof(uint32_t);
-  num = htonl((uint32_t)opts);
-  memcpy(wp, &num, sizeof(uint32_t));
-  wp += sizeof(uint32_t);
-  num = htonl((uint32_t)ksiz);
-  memcpy(wp, &num, sizeof(uint32_t));
-  wp += sizeof(uint32_t);
-  num = htonl((uint32_t)vsiz);
-  memcpy(wp, &num, sizeof(uint32_t));
-  wp += sizeof(uint32_t);
-  memcpy(wp, name, nsiz);
-  wp += nsiz;
-  memcpy(wp, kbuf, ksiz);
-  wp += ksiz;
-  memcpy(wp, vbuf, vsiz);
-  wp += vsiz;
-  if(tcrdbsend(rdb, buf, wp - buf)){
-    int code = ttsockgetc(rdb->sock);
-    if(code == 0){
-      int xsiz = ttsockgetint32(rdb->sock);
-      if(!ttsockcheckend(rdb->sock) && xsiz >= 0){
-        xbuf = tcmalloc(xsiz + 1);
-        if(ttsockrecv(rdb->sock, xbuf, xsiz)){
-          xbuf[xsiz] = '\0';
-          *sp = xsiz;
-        } else {
-          tcrdbsetecode(rdb, TTERECV);
-          free(xbuf);
-          xbuf = NULL;
-        }
-      } else {
-        tcrdbsetecode(rdb, TTERECV);
-      }
-    } else {
-      tcrdbsetecode(rdb, code == -1 ? TTERECV : TTEMISC);
-    }
-  }
-  pthread_cleanup_pop(1);
-  return xbuf;
-}
-
-
-/* Synchronize updated contents of a remote database object with the file and the device.
-   `rdb' specifies the remote database object.
-   If successful, the return value is true, else, it is false. */
-static bool tcrdbsyncimpl(TCRDB *rdb){
-  assert(rdb);
-  if(rdb->fd < 0){
-    if(!rdb->host || !(rdb->opts & RDBTRECON)){
-      tcrdbsetecode(rdb, TTEINVALID);
-      return false;
-    }
-    if(!tcrdbreconnect(rdb)) return false;
-  }
-  bool err = false;
-  unsigned char buf[TTIOBUFSIZ];
-  unsigned char *wp = buf;
-  *(wp++) = TTMAGICNUM;
-  *(wp++) = TTCMDSYNC;
-  if(tcrdbsend(rdb, buf, wp - buf)){
-    int code = ttsockgetc(rdb->sock);
-    if(code != 0){
-      tcrdbsetecode(rdb, code == -1 ? TTERECV : TTEMISC);
-      err = true;
-    }
-  } else {
-    err = true;
-  }
-  return !err;
-}
-
-/* Optimize the storage of a remove database object.
-   `rdb' specifies the remote database object.
-   `params' specifies the string of the tuning parameters.
-   If successful, the return value is true, else, it is false. */
-static bool tcrdboptimizeimpl(TCRDB *rdb, const char *params){
-  assert(rdb);
-  if(rdb->fd < 0){
-    if(!rdb->host || !(rdb->opts & RDBTRECON)){
-      tcrdbsetecode(rdb, TTEINVALID);
-      return false;
-    }
-    if(!tcrdbreconnect(rdb)) return false;
-  }
-  if(!params) params = "";
-  int psiz = strlen(params);
-  bool err = false;
-  int rsiz = 2 + sizeof(uint32_t) + psiz;
-  unsigned char stack[TTIOBUFSIZ];
-  unsigned char *buf = (rsiz < TTIOBUFSIZ) ? stack : tcmalloc(rsiz);
-  pthread_cleanup_push(free, (buf == stack) ? NULL : buf);
-  unsigned char *wp = buf;
-  *(wp++) = TTMAGICNUM;
-  *(wp++) = TTCMDOPTIMIZE;
-  uint32_t num;
-  num = htonl((uint32_t)psiz);
-  memcpy(wp, &num, sizeof(uint32_t));
-  wp += sizeof(uint32_t);
-  memcpy(wp, params, psiz);
-  wp += psiz;
-  if(tcrdbsend(rdb, buf, wp - buf)){
-    int code = ttsockgetc(rdb->sock);
-    if(code != 0){
-      tcrdbsetecode(rdb, code == -1 ? TTERECV : TTEMISC);
-      err = true;
-    }
-  } else {
-    err = true;
-  }
-  pthread_cleanup_pop(1);
-  return !err;
-}
-
-
 /* Remove all records of a remote database object.
    `rdb' specifies the remote database object.
    If successful, the return value is true, else, it is false. */
@@ -4240,48 +3965,6 @@ static bool tcrdbvanishimpl(TCRDB *rdb){
   } else {
     err = true;
   }
-  return !err;
-}
-
-
-/* Copy the database file of a remote database object.
-   `rdb' specifies the remote database object.
-   `path' specifies the path of the destination file.
-   If successful, the return value is true, else, it is false. */
-static bool tcrdbcopyimpl(TCRDB *rdb, const char *path){
-  assert(rdb && path);
-  if(rdb->fd < 0){
-    if(!rdb->host || !(rdb->opts & RDBTRECON)){
-      tcrdbsetecode(rdb, TTEINVALID);
-      return false;
-    }
-    if(!tcrdbreconnect(rdb)) return false;
-  }
-  bool err = false;
-  int psiz = strlen(path);
-  int rsiz = 2 + sizeof(uint32_t) + psiz;
-  unsigned char stack[TTIOBUFSIZ];
-  unsigned char *buf = (rsiz < TTIOBUFSIZ) ? stack : tcmalloc(rsiz);
-  pthread_cleanup_push(free, (buf == stack) ? NULL : buf);
-  unsigned char *wp = buf;
-  *(wp++) = TTMAGICNUM;
-  *(wp++) = TTCMDCOPY;
-  uint32_t num;
-  num = htonl((uint32_t)psiz);
-  memcpy(wp, &num, sizeof(uint32_t));
-  wp += sizeof(uint32_t);
-  memcpy(wp, path, psiz);
-  wp += psiz;
-  if(tcrdbsend(rdb, buf, wp - buf)){
-    int code = ttsockgetc(rdb->sock);
-    if(code != 0){
-      tcrdbsetecode(rdb, code == -1 ? TTERECV : TTEMISC);
-      err = true;
-    }
-  } else {
-    err = true;
-  }
-  pthread_cleanup_pop(1);
   return !err;
 }
 
@@ -4392,7 +4075,7 @@ static bool tcrdbsetmstimpl(TCRDB *rdb, const char *host, int port, uint64_t ts,
 }
 
 
-/* Get the simple server expression of an abstract database object.
+/* Get the simple server expression of a database object.
    `rdb' specifies the remote database object.
    The return value is the simple server expression or `NULL' if the object does not connect to
    any database server. */

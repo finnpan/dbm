@@ -27,8 +27,6 @@
 __NET_CLINKAGEBEGIN
 
 
-#include "db.h"
-
 
 
 /*************************************************************************************************
@@ -263,11 +261,7 @@ double ttunpackdouble(const char *buf);
 #define TTCMDFWMKEYS   0x58              /* ID of fwmkeys command */
 #define TTCMDADDINT    0x60              /* ID of addint command */
 #define TTCMDADDDOUBLE 0x61              /* ID of adddouble command */
-#define TTCMDEXT       0x68              /* ID of ext command */
-#define TTCMDSYNC      0x70              /* ID of sync command */
-#define TTCMDOPTIMIZE  0x71              /* ID of optimize command */
 #define TTCMDVANISH    0x72              /* ID of vanish command */
-#define TTCMDCOPY      0x73              /* ID of copy command */
 #define TTCMDRESTORE   0x74              /* ID of restore command */
 #define TTCMDSETMST    0x78              /* ID of setmst command */
 #define TTCMDRNUM      0x80              /* ID of rnum command */
@@ -287,7 +281,7 @@ typedef struct _TTTIMER {                /* type of structure for a timer */
   void *opq_timed;                       /* opaque pointer for timed handler */
 } TTTIMER;
 
-typedef struct _TTREQ {                  /* type of structure for a server */
+typedef struct _TTREQ {                  /* type of structure for a request */
   pthread_t thid;                        /* thread ID */
   bool alive;                            /* alive flag */
   struct _TTSERV *serv;                  /* server object */
@@ -339,8 +333,7 @@ void ttservdel(TTSERV *serv);
 
 /* Configure a server object.
    `serv' specifies the server object.
-   `host' specifies the name or the address.  If it is `NULL', If it is `NULL', every network
-   address is binded.
+   `host' specifies the name or the address.  If it is `NULL', every network address is binded.
    `port' specifies the port number.  If it is not less than 0, UNIX domain socket is binded and
    the host name is treated as the path of the socket file.
    If successful, the return value is true, else, it is false. */
@@ -603,48 +596,48 @@ void tculrdwait(TCULRD *ulrd);
 const void *tculrdread(TCULRD *ulrd, int *sp, uint64_t *tsp, uint32_t *sidp, uint32_t *midp);
 
 
-/* Store a record into an abstract database object.
+/* Store a record into a database object.
    `ulog' specifies the update log object.
    `sid' specifies the origin server ID of the message.
    `mid' specifies the master server ID of the message.
-   `adb' specifies the abstract database object.
+   `mdb' specifies the database object.
    `kbuf' specifies the pointer to the region of the key.
    `ksiz' specifies the size of the region of the key.
    `vbuf' specifies the pointer to the region of the value.
    `vsiz' specifies the size of the region of the value.
    If successful, the return value is true, else, it is false.
    If a record with the same key exists in the database, it is overwritten. */
-bool tculogadbput(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+bool tculogdbput(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                   const void *kbuf, int ksiz, const void *vbuf, int vsiz);
 
 
-/* Store a new record into an abstract database object.
+/* Store a new record into a database object.
    `ulog' specifies the update log object.
    `sid' specifies the origin server ID of the message.
    `mid' specifies the master server ID of the message.
-   `adb' specifies the abstract database object.
+   `mdb' specifies the database object.
    `kbuf' specifies the pointer to the region of the key.
    `ksiz' specifies the size of the region of the key.
    `vbuf' specifies the pointer to the region of the value.
    `vsiz' specifies the size of the region of the value.
    If successful, the return value is true, else, it is false.
    If a record with the same key exists in the database, this function has no effect. */
-bool tculogadbputkeep(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+bool tculogdbputkeep(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                       const void *kbuf, int ksiz, const void *vbuf, int vsiz);
 
 
-/* Concatenate a value at the end of the existing record in an abstract database object.
+/* Concatenate a value at the end of the existing record in a database object.
    `ulog' specifies the update log object.
    `sid' specifies the origin server ID of the message.
    `mid' specifies the master server ID of the message.
-   `adb' specifies the abstract database object.
+   `mdb' specifies the database object.
    `kbuf' specifies the pointer to the region of the key.
    `ksiz' specifies the size of the region of the key.
    `vbuf' specifies the pointer to the region of the value.
    `vsiz' specifies the size of the region of the value.
    If successful, the return value is true, else, it is false.
    If there is no corresponding record, a new record is created. */
-bool tculogadbputcat(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+bool tculogdbputcat(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                      const void *kbuf, int ksiz, const void *vbuf, int vsiz);
 
 
@@ -652,7 +645,7 @@ bool tculogadbputcat(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
    `ulog' specifies the update log object.
    `sid' specifies the origin server ID of the message.
    `mid' specifies the master server ID of the message.
-   `adb' specifies the abstract database object.
+   `mdb' specifies the database object.
    `kbuf' specifies the pointer to the region of the key.
    `ksiz' specifies the size of the region of the key.
    `vbuf' specifies the pointer to the region of the value.
@@ -660,86 +653,66 @@ bool tculogadbputcat(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
    `width' specifies the width of the record.
    If successful, the return value is true, else, it is false.
    If there is no corresponding record, a new record is created. */
-bool tculogadbputshl(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+bool tculogdbputshl(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                      const void *kbuf, int ksiz, const void *vbuf, int vsiz, int width);
 
 
-/* Remove a record of an abstract database object.
+/* Remove a record of a database object.
    `ulog' specifies the update log object.
    `sid' specifies the origin server ID of the message.
    `mid' specifies the master server ID of the message.
-   `adb' specifies the abstract database object.
+   `mdb' specifies the database object.
    `kbuf' specifies the pointer to the region of the key.
    `ksiz' specifies the size of the region of the key.
    If successful, the return value is true, else, it is false. */
-bool tculogadbout(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+bool tculogdbout(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                   const void *kbuf, int ksiz);
 
 
-/* Add an integer to a record in an abstract database object.
+/* Add an integer to a record in a database object.
    `ulog' specifies the update log object.
    `sid' specifies the origin server ID of the message.
    `mid' specifies the master server ID of the message.
-   `adb' specifies the abstract database object connected as a writer.
+   `mdb' specifies the database object connected as a writer.
    `kbuf' specifies the pointer to the region of the key.
    `ksiz' specifies the size of the region of the key.
    `num' specifies the additional value.
    If successful, the return value is the summation value, else, it is `INT_MIN'.
    If the corresponding record exists, the value is treated as an integer and is added to.  If no
    record corresponds, a new record of the additional value is stored. */
-int tculogadbaddint(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+int tculogdbaddint(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                     const void *kbuf, int ksiz, int num);
 
 
-/* Add a real number to a record in an abstract database object.
+/* Add a real number to a record in a database object.
    `ulog' specifies the update log object.
    `sid' specifies the origin server ID of the message.
    `mid' specifies the master server ID of the message.
-   `adb' specifies the abstract database object connected as a writer.
+   `mdb' specifies the database object connected as a writer.
    `kbuf' specifies the pointer to the region of the key.
    `ksiz' specifies the size of the region of the key.
    `num' specifies the additional value.
    If successful, the return value is the summation value, else, it is `NAN'.
    If the corresponding record exists, the value is treated as a real number and is added to.  If
    no record corresponds, a new record of the additional value is stored. */
-double tculogadbadddouble(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+double tculogdbadddouble(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                           const void *kbuf, int ksiz, double num);
 
 
-/* Synchronize updated contents of an abstract database object with the file and the device.
+/* Remove all records of a database object.
    `ulog' specifies the update log object.
    `sid' specifies the origin server ID of the message.
    `mid' specifies the master server ID of the message.
-   `adb' specifies the abstract database object.
+   `mdb' specifies the database object.
    If successful, the return value is true, else, it is false. */
-bool tculogadbsync(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb);
+bool tculogdbvanish(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb);
 
 
-/* Optimize the storage of an abstract database object.
+/* Call a versatile function for miscellaneous operations of a database object.
    `ulog' specifies the update log object.
    `sid' specifies the origin server ID of the message.
    `mid' specifies the master server ID of the message.
-   `adb' specifies the abstract database object.
-   `params' specifies the string of the tuning parameters, which works as with the tuning
-   of parameters the function `tcadbopen'.  If it is `NULL', it is not used.
-   If successful, the return value is true, else, it is false. */
-bool tculogadboptimize(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb, const char *params);
-
-
-/* Remove all records of an abstract database object.
-   `ulog' specifies the update log object.
-   `sid' specifies the origin server ID of the message.
-   `mid' specifies the master server ID of the message.
-   `adb' specifies the abstract database object.
-   If successful, the return value is true, else, it is false. */
-bool tculogadbvanish(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb);
-
-
-/* Call a versatile function for miscellaneous operations of an abstract database object.
-   `ulog' specifies the update log object.
-   `sid' specifies the origin server ID of the message.
-   `mid' specifies the master server ID of the message.
-   `adb' specifies the abstract database object.
+   `mdb' specifies the database object.
    `name' specifies the name of the function.
    `args' specifies a list object containing arguments.
    If successful, the return value is a list object of the result.  `NULL' is returned on failure.
@@ -749,22 +722,22 @@ bool tculogadbvanish(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb);
    records.  It receives keys, and returns values.  Because the object of the return value is
    created with the function `tclistnew', it should be deleted with the function `tclistdel' when
    it is no longer in use. */
-TCLIST *tculogadbmisc(TCULOG *ulog, uint32_t sid, uint32_t mid, TCADB *adb,
+TCLIST *tculogdbmisc(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                       const char *name, const TCLIST *args);
 
 
-/* Restore an abstract database object.
-   `adb' specifies the abstract database object.
+/* Restore a database object.
+   `mdb' specifies the database object.
    `path' specifies the path of the update log directory.
    `ts' specifies the beginning time stamp.
    `con' specifies whether consistency checking is performed.
    `ulog' specifies the update log object.
    If successful, the return value is true, else, it is false. */
-bool tculogadbrestore(TCADB *adb, const char *path, uint64_t ts, bool con, TCULOG *ulog);
+bool tculogdbrestore(TCMDB *mdb, const char *path, uint64_t ts, bool con, TCULOG *ulog);
 
 
 /* Redo an update log message.
-   `adb' specifies the abstract database object.
+   `mdb' specifies the database object.
    `ptr' specifies the pointer to the region of the message.
    `size' specifies the size of the region.
    `ulog' specifies the update log object.
@@ -773,7 +746,7 @@ bool tculogadbrestore(TCADB *adb, const char *path, uint64_t ts, bool con, TCULO
    `cp' specifies the pointer to the variable into which the result of consistency checking is
    assigned.
    If successful, the return value is true, else, it is false. */
-bool tculogadbredo(TCADB *adb, const char *ptr, int size, TCULOG *ulog,
+bool tculogdbredo(TCMDB *mdb, const char *ptr, int size, TCULOG *ulog,
                    uint32_t sid, uint32_t mid, bool *cp);
 
 
@@ -848,11 +821,6 @@ enum {                                   /* enumeration for error codes */
 
 enum {                                   /* enumeration for tuning options */
   RDBTRECON = 1 << 0                     /* reconnect automatically */
-};
-
-enum {                                   /* enumeration for scripting extension options */
-  RDBXOLCKREC = 1 << 0,                  /* record locking */
-  RDBXOLCKGLB = 1 << 1                   /* global locking */
 };
 
 enum {                                   /* enumeration for restore options */
@@ -1092,56 +1060,10 @@ int tcrdbaddint(TCRDB *rdb, const void *kbuf, int ksiz, int num);
 double tcrdbadddouble(TCRDB *rdb, const void *kbuf, int ksiz, double num);
 
 
-/* Call a function of the scripting language extension.
-   `rdb' specifies the remote database object.
-   `name' specifies the function name.
-   `opts' specifies options by bitwise-or: `RDBXOLCKREC' for record locking, `RDBXOLCKGLB' for
-   global locking.
-   `kbuf' specifies the pointer to the region of the key.
-   `ksiz' specifies the size of the region of the key.
-   `vbuf' specifies the pointer to the region of the value.
-   `vsiz' specifies the size of the region of the value.
-   `sp' specifies the pointer to the variable into which the size of the region of the return
-   value is assigned.
-   If successful, the return value is the pointer to the region of the value of the response.
-   `NULL' is returned on failure.
-   Because an additional zero code is appended at the end of the region of the return value,
-   the return value can be treated as a character string.  Because the region of the return
-   value is allocated with the `malloc' call, it should be released with the `free' call when
-   it is no longer in use. */
-void *tcrdbext(TCRDB *rdb, const char *name, int opts,
-               const void *kbuf, int ksiz, const void *vbuf, int vsiz, int *sp);
-
-
-/* Synchronize updated contents of a remote database object with the file and the device.
-   `rdb' specifies the remote database object.
-   If successful, the return value is true, else, it is false. */
-bool tcrdbsync(TCRDB *rdb);
-
-
-/* Optimize the storage of a remove database object.
-   `rdb' specifies the remote database object.
-   `params' specifies the string of the tuning parameters.  If it is `NULL', it is not used.
-   If successful, the return value is true, else, it is false. */
-bool tcrdboptimize(TCRDB *rdb, const char *params);
-
-
 /* Remove all records of a remote database object.
    `rdb' specifies the remote database object.
    If successful, the return value is true, else, it is false. */
 bool tcrdbvanish(TCRDB *rdb);
-
-
-/* Copy the database file of a remote database object.
-   `rdb' specifies the remote database object.
-   `path' specifies the path of the destination file.  If it begins with `@', the trailing
-   substring is executed as a command line.
-   If successful, the return value is true, else, it is false.  False is returned if the executed
-   command returns non-zero code.
-   The database file is assured to be kept synchronized and not modified while the copying or
-   executing operation is in progress.  So, this function is useful to create a backup file of
-   the database file. */
-bool tcrdbcopy(TCRDB *rdb, const char *path);
 
 
 /* Restore the database file of a remote database object from the update log.
@@ -1176,7 +1098,7 @@ bool tcrdbsetmst(TCRDB *rdb, const char *host, int port, uint64_t ts, int opts);
 bool tcrdbsetmst2(TCRDB *rdb, const char *expr, uint64_t ts, int opts);
 
 
-/* Get the simple server expression of an abstract database object.
+/* Get the simple server expression of a database object.
    `rdb' specifies the remote database object.
    The return value is the simple server expression or `NULL' if the object does not connect to
    any database server. */

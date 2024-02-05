@@ -14,7 +14,6 @@
  *************************************************************************************************/
 
 #include "util.h"
-#include "db.h"
 #include "net.h"
 
 #define DEFTHNUM       8                 // default thread number
@@ -27,7 +26,6 @@
 #define LINEBUFSIZ     8192              // size of a line buffer
 #define TOKENUNIT      256               // unit number of tokens
 #define RECMTXNUM      31                // number of mutexes of records
-#define STASHBNUM      1021              // bucket number of the script stash object
 #define REPLPERIOD     1.0               // period of calling replication request
 
 enum {                                   // enumeration for command sequential numbers
@@ -46,16 +44,13 @@ enum {                                   // enumeration for command sequential n
   TTSEQADDINT,                           // sequential number of addint command
   TTSEQADDDOUBLE,                        // sequential number of adddouble command
   TTSEQEXT,                              // sequential number of ext command
-  TTSEQSYNC,                             // sequential number of sync command
-  TTSEQOPTIMIZE,                         // sequential number of sync command
   TTSEQVANISH,                           // sequential number of vanish command
-  TTSEQCOPY,                             // sequential number of copy command
   TTSEQRESTORE,                          // sequential number of restore command
   TTSEQSETMST,                           // sequential number of setmst command
   TTSEQRNUM,                             // sequential number of rnum command
   TTSEQSIZE,                             // sequential number of size command
   TTSEQSTAT,                             // sequential number of stat command
-  TTSEQMISC,                             // sequential number of stat command
+  TTSEQMISC,                             // sequential number of misc command
   TTSEQREPL,                             // sequential number of repl command
   TTSEQSLAVE,                            // sequential number of slave command
   TTSEQALLORG,                           // sequential number of all commands the original
@@ -83,7 +78,7 @@ typedef struct {                         // type of structure of master synchron
   const char *rtspath;                   // path of the replication time stamp file
   uint64_t rts;                          // replication time stamp
   int opts;                              // options
-  TCADB *adb;                            // database object
+  TCMDB *mdb;                            // database object
   TCULOG *ulog;                          // update log object
   uint32_t sid;                          // server ID number
   bool fail;                             // failure flag
@@ -92,34 +87,21 @@ typedef struct {                         // type of structure of master synchron
   uint64_t mts;                          // modified time stamp
 } REPLARG;
 
-typedef struct {                         // type of structure of periodic opaque object
-  const char *name;                      // function name
-  TCADB *adb;                            // database object
-  TCULOG *ulog;                          // update log object
-  uint32_t sid;                          // server ID number
-  REPLARG *sarg;                         // replication object
-  void *scrext;                          // script extension object
-} EXTPCARG;
-
 typedef struct {                         // type of structure of task opaque object
   int thnum;                             // number of threads
   uint64_t *counts;                      // conunters of execution
   uint64_t mask;                         // bit mask of commands
-  TCADB *adb;                            // database object
+  TCMDB *mdb;                            // database object
   TCULOG *ulog;                          // update log object
   uint32_t sid;                          // server ID number
   REPLARG *sarg;                         // replication object
   pthread_mutex_t rmtxs[RECMTXNUM];      // mutex for records
-  void **screxts;                        // script extension objects
 } TASKARG;
 
 typedef struct {                         // type of structure of termination opaque object
   int thnum;                             // number of threads
-  TCADB *adb;                            // database object
+  TCMDB *mdb;                            // database object
   REPLARG *sarg;                         // replication object
-  void **screxts;                        // script extension objects
-  EXTPCARG *pcargs;                      // periodic opaque objects
-  int pcnum;                             // number of periodic opaque objects
   bool err;                              // error flag
 } TERMARG;
 
@@ -138,15 +120,13 @@ static void usage(void);
 static uint64_t getcmdmask(const char *expr);
 static void sigtermhandler(int signum);
 static void sigchldhandler(int signum);
-static int proc(const char *dbname, const char *host, int port, int thnum, int tout,
+static int proc(const char *host, int port, int thnum, int tout,
                 bool dmn, const char *pidpath, bool kl, const char *logpath,
                 const char *ulogpath, uint64_t ulim, bool uas, uint32_t sid,
                 const char *mhost, int mport, const char *rtspath, int ropts,
-                const char *skelpath, int mulnum, const char *extpath, const TCLIST *extpcs,
                 uint64_t mask);
 static void do_log(int level, const char *msg, void *opq);
 static void do_slave(void *opq);
-static void do_extpc(void *opq);
 static void do_task(TTSOCK *sock, void *opq, TTREQ *req);
 static char **tokenize(char *str, int *np);
 static uint32_t recmtxidx(const char *kbuf, int ksiz);
@@ -165,11 +145,7 @@ static void do_iternext(TTSOCK *sock, TASKARG *arg, TTREQ *req);
 static void do_fwmkeys(TTSOCK *sock, TASKARG *arg, TTREQ *req);
 static void do_addint(TTSOCK *sock, TASKARG *arg, TTREQ *req);
 static void do_adddouble(TTSOCK *sock, TASKARG *arg, TTREQ *req);
-static void do_ext(TTSOCK *sock, TASKARG *arg, TTREQ *req);
-static void do_sync(TTSOCK *sock, TASKARG *arg, TTREQ *req);
-static void do_optimize(TTSOCK *sock, TASKARG *arg, TTREQ *req);
 static void do_vanish(TTSOCK *sock, TASKARG *arg, TTREQ *req);
-static void do_copy(TTSOCK *sock, TASKARG *arg, TTREQ *req);
 static void do_restore(TTSOCK *sock, TASKARG *arg, TTREQ *req);
 static void do_setmst(TTSOCK *sock, TASKARG *arg, TTREQ *req);
 static void do_rnum(TTSOCK *sock, TASKARG *arg, TTREQ *req);
@@ -199,33 +175,16 @@ static void do_http_options(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, con
 static void do_term(void *opq);
 
 
-/* for compiling: scrext has been removed. */
-static void *scrextnew(void **screxts, int thnum, int thid, const char *path,
-                       TCADB *adb, TCULOG *ulog, uint32_t sid, TCMDB *stash, TCMDB *lock,
-                       void (*logger)(int, const char *, void *), void *logopq)
-{ assert(0); return NULL; }
-static bool scrextdel(void *scr) { assert(0); return false; }
-static char *scrextcallmethod(void *scr, const char *name,
-                              const void *kbuf, int ksiz,
-                              const void *vbuf, int vsiz, int *sp)
-{ assert(0); return NULL; }
-static bool scrextkill(void *scr) { assert(0); return false; }
-
-
 /* main routine */
 int main(int argc, char **argv){
   g_progname = argv[0];
   g_starttime = tctime();
-  char *dbname = NULL;
   char *host = NULL;
   char *pidpath = NULL;
   char *logpath = NULL;
   char *ulogpath = NULL;
   char *mhost = NULL;
   char *rtspath = NULL;
-  char *skelpath = NULL;
-  char *extpath = NULL;
-  TCLIST *extpcs = NULL;
   int port = TTDEFPORT;
   int thnum = DEFTHNUM;
   int tout = 0;
@@ -236,10 +195,9 @@ int main(int argc, char **argv){
   uint32_t sid = 0;
   int mport = TTDEFPORT;
   int ropts = 0;
-  int mulnum = 0;
   uint64_t mask = 0;
   for(int i = 1; i < argc; i++){
-    if(!dbname && argv[i][0] == '-'){
+    if(argv[i][0] == '-'){
       if(!strcmp(argv[i], "-host")){
         if(++i >= argc) usage();
         host = argv[i];
@@ -288,15 +246,6 @@ int main(int argc, char **argv){
         rtspath = argv[i];
       } else if(!strcmp(argv[i], "-rcc")){
         ropts |= RDBROCHKCON;
-      } else if(!strcmp(argv[i], "-ext")){
-        if(++i >= argc) usage();
-        extpath = argv[i];
-      } else if(!strcmp(argv[i], "-extpc")){
-        if(!extpcs) extpcs = tclistnew2(1);
-        if(++i >= argc) usage();
-        tclistpush2(extpcs, argv[i]);
-        if(++i >= argc) usage();
-        tclistpush2(extpcs, argv[i]);
       } else if(!strcmp(argv[i], "-mask")){
         if(++i >= argc) usage();
         mask |= getcmdmask(argv[i]);
@@ -311,22 +260,17 @@ int main(int argc, char **argv){
       } else {
         usage();
       }
-    } else if(!dbname){
-      dbname = argv[i];
     } else {
       usage();
     }
   }
-  if(!dbname) dbname = "*";
   if(thnum < 1 || mport < 1) usage();
   if(dmn && !pidpath) pidpath = DEFPIDPATH;
   if(!rtspath) rtspath = DEFRTSPATH;
   g_serv = ttservnew();
-  int rv = proc(dbname, host, port, thnum, tout, dmn, pidpath, kl, logpath,
-                ulogpath, ulim, uas, sid, mhost, mport, rtspath, ropts,
-                skelpath, mulnum, extpath, extpcs, mask);
+  int rv = proc(host, port, thnum, tout, dmn, pidpath, kl, logpath,
+                ulogpath, ulim, uas, sid, mhost, mport, rtspath, ropts, mask);
   ttservdel(g_serv);
-  if(extpcs) tclistdel(extpcs);
   return rv;
 }
 
@@ -339,7 +283,7 @@ static void usage(void){
   fprintf(stderr, "  %s [-host name] [-port num] [-thnum num] [-tout num]"
           " [-dmn] [-pid path] [-kl] [-log path] [-ld|-le] [-ulog path] [-ulim num] [-uas]"
           " [-sid num] [-mhost name] [-mport num] [-rts path] [-rcc]"
-          " [-ext path] [-extpc name period] [-mask expr] [-unmask expr] [dbname]\n",
+          " [-mask expr] [-unmask expr]\n",
           g_progname);
   fprintf(stderr, "\n");
   exit(1);
@@ -384,14 +328,8 @@ static uint64_t getcmdmask(const char *expr){
       mask |= 1ULL << TTSEQADDDOUBLE;
     } else if(!tcstricmp(name, "ext")){
       mask |= 1ULL << TTSEQEXT;
-    } else if(!tcstricmp(name, "sync")){
-      mask |= 1ULL << TTSEQSYNC;
-    } else if(!tcstricmp(name, "optimize")){
-      mask |= 1ULL << TTSEQOPTIMIZE;
     } else if(!tcstricmp(name, "vanish")){
       mask |= 1ULL << TTSEQVANISH;
-    } else if(!tcstricmp(name, "copy")){
-      mask |= 1ULL << TTSEQCOPY;
     } else if(!tcstricmp(name, "restore")){
       mask |= 1ULL << TTSEQRESTORE;
     } else if(!tcstricmp(name, "setmst")){
@@ -443,18 +381,15 @@ static void sigchldhandler(int signum){
 
 
 /* perform the command */
-static int proc(const char *dbname, const char *host, int port, int thnum, int tout,
+static int proc(const char *host, int port, int thnum, int tout,
                 bool dmn, const char *pidpath, bool kl, const char *logpath,
                 const char *ulogpath, uint64_t ulim, bool uas, uint32_t sid,
                 const char *mhost, int mport, const char *rtspath, int ropts,
-                const char *skelpath, int mulnum, const char *extpath, const TCLIST *extpcs,
                 uint64_t mask){
   LOGARG larg;
   larg.fd = 1;
   ttservsetloghandler(g_serv, do_log, &larg);
   if(dmn){
-    if(dbname && *dbname != '*' && *dbname != '+' && *dbname != MYPATHCHR)
-      ttservlog(g_serv, TTLOGINFO, "warning: dbname(%s) is not the absolute path", dbname);
     if(port == 0 && host && *host != MYPATHCHR)
       ttservlog(g_serv, TTLOGINFO, "warning: host(%s) is not the absolute path", host);
     if(pidpath && *pidpath != MYPATHCHR)
@@ -467,17 +402,11 @@ static int proc(const char *dbname, const char *host, int port, int thnum, int t
       ttservlog(g_serv, TTLOGINFO, "warning: mhost(%s) is not the absolute path", mhost);
     if(mhost && rtspath && *rtspath != MYPATHCHR)
       ttservlog(g_serv, TTLOGINFO, "warning: rts(%s) is not the absolute path", rtspath);
-    if(skelpath && strchr(skelpath, MYPATHCHR) && *skelpath != MYPATHCHR)
-      ttservlog(g_serv, TTLOGINFO, "warning: skel(%s) is not the absolute path", skelpath);
-    if(extpath && *extpath != MYPATHCHR)
-      ttservlog(g_serv, TTLOGINFO, "warning: ext(%s) is not the absolute path", extpath);
     if(chdir("/") == -1){
       ttservlog(g_serv, TTLOGERROR, "chdir failed");
       return 1;
     }
   }
-  if(!skelpath && dbname && *dbname != '*' && *dbname != '+' && !strstr(dbname, ".tc"))
-    ttservlog(g_serv, TTLOGINFO, "warning: dbname(%s) has no suffix for database type", dbname);
   struct stat sbuf;
   if(ulogpath && (stat(ulogpath, &sbuf) != 0 || !S_ISDIR(sbuf.st_mode)))
     ttservlog(g_serv, TTLOGINFO, "warning: ulog(%s) is not a directory", ulogpath);
@@ -578,14 +507,8 @@ static int proc(const char *dbname, const char *host, int port, int thnum, int t
     ttservlog(g_serv, TTLOGERROR, "getrlimit failed");
   }
   bool err = false;
-  assert(!skelpath);
-  TCADB *adb = tcadbnew();
-  ttservlog(g_serv, TTLOGSYSTEM, "opening the database: %s", dbname);
-  assert(mulnum == 0);
-  if(!tcadbopen(adb, dbname)){
-    err = true;
-    ttservlog(g_serv, TTLOGERROR, "tcadbopen failed");
-  }
+  TCMDB *mdb = tcmdbnew();
+  ttservlog(g_serv, TTLOGSYSTEM, "opening the database: on-memory hash database");
   TCULOG *ulog = tculognew();
   if(ulogpath){
     ttservlog(g_serv, TTLOGSYSTEM,
@@ -605,32 +528,6 @@ static int proc(const char *dbname, const char *host, int port, int thnum, int t
     ttservlog(g_serv, TTLOGSYSTEM, "replication configuration: host=%s port=%d ropts=%d",
               mhost, mport, ropts);
   uint64_t *counts = tccalloc(sizeof(*counts), (TTSEQNUM) * thnum);
-  void *screxts[thnum];
-  TCMDB *scrstash = NULL;
-  TCMDB *scrlock = NULL;
-  pthread_mutex_t *scrlcks = NULL;
-  if(extpath){
-    ttservlog(g_serv, TTLOGSYSTEM, "scripting extension: %s", extpath);
-    scrstash = tcmdbnew2(STASHBNUM);
-    scrlock = tcmdbnew2(thnum * 2 + 1);
-    bool screrr = false;
-    for(int i = 0; i < thnum; i++){
-      screxts[i] = NULL;
-    }
-    for(int i = 0; i < thnum; i++){
-      screxts[i] = scrextnew(screxts, thnum, i, extpath, adb, ulog, sid, scrstash, scrlock,
-                             do_log, &larg);
-      if(!screxts[i]) screrr = true;
-    }
-    if(screrr){
-      err = true;
-      ttservlog(g_serv, TTLOGERROR, "scrextnew failed");
-    }
-  } else {
-    for(int i = 0; i < thnum; i++){
-      screxts[i] = NULL;
-    }
-  }
   if(mask != 0)
     ttservlog(g_serv, TTLOGSYSTEM, "command bit mask: 0x%llx", (unsigned long long)mask);
   REPLARG sarg;
@@ -639,7 +536,7 @@ static int proc(const char *dbname, const char *host, int port, int thnum, int t
   sarg.rtspath = rtspath;
   sarg.rts = 0;
   sarg.opts = ropts;
-  sarg.adb = adb;
+  sarg.mdb = mdb;
   sarg.ulog = ulog;
   sarg.sid = sid;
   sarg.fail = false;
@@ -647,35 +544,11 @@ static int proc(const char *dbname, const char *host, int port, int thnum, int t
   sarg.fatal = false;
   sarg.mts = 0;
   if(!(mask & (1ULL << TTSEQSLAVE))) ttservaddtimedhandler(g_serv, REPLPERIOD, do_slave, &sarg);
-  EXTPCARG *pcargs = NULL;
-  int pcnum = 0;
-  if(extpath && extpcs){
-    pcnum = tclistnum(extpcs) / 2;
-    pcargs = tcmalloc(sizeof(*pcargs) * pcnum);
-    for(int i = 0; i < pcnum; i++){
-      const char *name = tclistval2(extpcs, i * 2);
-      double period = tcatof(tclistval2(extpcs, i * 2 + 1));
-      EXTPCARG *pcarg = pcargs + i;
-      pcarg->name = name;
-      pcarg->adb = adb;
-      pcarg->ulog = ulog;
-      pcarg->sid = sid;
-      pcarg->sarg = &sarg;
-      pcarg->scrext = scrextnew(screxts, thnum, thnum + i, extpath, adb, ulog, sid,
-                                scrstash, scrlock, do_log, &larg);
-      if(pcarg->scrext){
-        if(*name && period > 0) ttservaddtimedhandler(g_serv, period, do_extpc, pcarg);
-      } else {
-        err = true;
-        ttservlog(g_serv, TTLOGERROR, "scrextnew failed");
-      }
-    }
-  }
   TASKARG targ;
   targ.thnum = thnum;
   targ.counts = counts;
   targ.mask = mask;
-  targ.adb = adb;
+  targ.mdb = mdb;
   targ.ulog = ulog;
   targ.sid = sid;
   targ.sarg = &sarg;
@@ -683,15 +556,11 @@ static int proc(const char *dbname, const char *host, int port, int thnum, int t
     if(pthread_mutex_init(targ.rmtxs + i, NULL) != 0)
       ttservlog(g_serv, TTLOGERROR, "pthread_mutex_init failed");
   }
-  targ.screxts = screxts;
   ttservsettaskhandler(g_serv, do_task, &targ);
   TERMARG karg;
   karg.thnum = thnum;
-  karg.adb = adb;
+  karg.mdb = mdb;
   karg.sarg = &sarg;
-  karg.screxts = screxts;
-  karg.pcargs = pcargs;
-  karg.pcnum = pcnum;
   karg.err = false;
   ttservsettermhandler(g_serv, do_term, &karg);
   if(larg.fd != 1){
@@ -718,44 +587,17 @@ static int proc(const char *dbname, const char *host, int port, int thnum, int t
     if(!ttservstart(g_serv)) err = true;
   } while(g_restart);
   if(karg.err) err = true;
-  if(pcargs){
-    for(int i = 0; i < pcnum; i++){
-      EXTPCARG *pcarg = pcargs + i;
-      if(!pcarg->scrext) continue;
-      if(!scrextdel(pcarg->scrext)){
-        err = true;
-        ttservlog(g_serv, TTLOGERROR, "scrextdel failed");
-      }
-    }
-    free(pcargs);
-  }
   for(int i = 0; i < RECMTXNUM; i++){
     if(pthread_mutex_destroy(targ.rmtxs + i) != 0)
       ttservlog(g_serv, TTLOGERROR, "pthread_mutex_destroy failed");
   }
-  for(int i = 0; i < thnum; i++){
-    if(!screxts[i]) continue;
-    if(!scrextdel(screxts[i])){
-      err = true;
-      ttservlog(g_serv, TTLOGERROR, "scrextdel failed");
-    }
-  }
-  if(scrlcks){
-    for(int i = 0; i < RECMTXNUM; i++){
-      if(pthread_mutex_destroy(scrlcks + i) != 0)
-        ttservlog(g_serv, TTLOGERROR, "pthread_mutex_destroy failed");
-    }
-    free(scrlcks);
-  }
-  if(scrlock) tcmdbdel(scrlock);
-  if(scrstash) tcmdbdel(scrstash);
   free(counts);
   if(ulogpath && !tculogclose(ulog)){
     err = true;
     ttservlog(g_serv, TTLOGERROR, "tculogclose failed");
   }
   tculogdel(ulog);
-  tcadbdel(adb);
+  tcmdbdel(mdb);
   if(pidpath && unlink(pidpath) != 0){
     err = true;
     ttservlog(g_serv, TTLOGERROR, "unlink failed");
@@ -792,7 +634,7 @@ static void do_log(int level, const char *msg, void *opq){
 /* replicate master data */
 static void do_slave(void *opq){
   REPLARG *arg = opq;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   if(arg->fatal) return;
@@ -836,9 +678,9 @@ static void do_slave(void *opq){
           (rbuf = tcreplread(repl, &rsiz, &rts, &rsid)) != NULL){
       if(rsiz < 1) continue;
       bool cc;
-      if(!tculogadbredo(adb, rbuf, rsiz, ulog, rsid, repl->mid, &cc)){
+      if(!tculogdbredo(mdb, rbuf, rsiz, ulog, rsid, repl->mid, &cc)){
         err = true;
-        ttservlog(g_serv, TTLOGERROR, "do_slave: tculogadbredo failed");
+        ttservlog(g_serv, TTLOGERROR, "do_slave: tculogdbredo failed");
       } else if(!cc){
         if(arg->opts & RDBROCHKCON){
           err = true;
@@ -869,17 +711,6 @@ static void do_slave(void *opq){
   }
   pthread_cleanup_pop(1);
   if(close(rtsfd) == -1) ttservlog(g_serv, TTLOGERROR, "do_slave: close failed");
-}
-
-
-/* perform an extension command */
-static void do_extpc(void *opq){
-  EXTPCARG *arg = (EXTPCARG *)opq;
-  const char *name = arg->name;
-  void *scr = arg->scrext;
-  int xsiz;
-  char *xbuf = scrextcallmethod(scr, name, "", 0, "", 0, &xsiz);
-  free(xbuf);
 }
 
 
@@ -931,20 +762,8 @@ static void do_task(TTSOCK *sock, void *opq, TTREQ *req){
       case TTCMDADDDOUBLE:
         do_adddouble(sock, arg, req);
         break;
-      case TTCMDEXT:
-        do_ext(sock, arg, req);
-        break;
-      case TTCMDSYNC:
-        do_sync(sock, arg, req);
-        break;
-      case TTCMDOPTIMIZE:
-        do_optimize(sock, arg, req);
-        break;
       case TTCMDVANISH:
         do_vanish(sock, arg, req);
-        break;
-      case TTCMDCOPY:
-        do_copy(sock, arg, req);
         break;
       case TTCMDRESTORE:
         do_restore(sock, arg, req);
@@ -1089,7 +908,7 @@ static void do_put(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing put command");
   arg->counts[TTSEQNUM*req->idx+TTSEQPUT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   int ksiz = ttsockgetint32(sock);
@@ -1107,7 +926,7 @@ static void do_put(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     if(mask & ((1ULL << TTSEQPUT) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLWRITE))){
       code = 1;
       ttservlog(g_serv, TTLOGINFO, "do_put: forbidden");
-    } else if(!tculogadbput(ulog, sid, 0, adb, buf, ksiz, buf + ksiz, vsiz)){
+    } else if(!tculogdbput(ulog, sid, 0, mdb, buf, ksiz, buf + ksiz, vsiz)){
       arg->counts[TTSEQNUM*req->idx+TTSEQPUTMISS]++;
       code = 1;
       ttservlog(g_serv, TTLOGERROR, "do_put: operation failed");
@@ -1129,7 +948,7 @@ static void do_putkeep(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing putkeep command");
   arg->counts[TTSEQNUM*req->idx+TTSEQPUTKEEP]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   int ksiz = ttsockgetint32(sock);
@@ -1147,7 +966,7 @@ static void do_putkeep(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     if(mask & ((1ULL << TTSEQPUTKEEP) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLWRITE))){
       code = 1;
       ttservlog(g_serv, TTLOGINFO, "do_putkeep: forbidden");
-    } else if(!tculogadbputkeep(ulog, sid, 0, adb, buf, ksiz, buf + ksiz, vsiz)){
+    } else if(!tculogdbputkeep(ulog, sid, 0, mdb, buf, ksiz, buf + ksiz, vsiz)){
       arg->counts[TTSEQNUM*req->idx+TTSEQPUTMISS]++;
       code = 1;
     }
@@ -1168,7 +987,7 @@ static void do_putcat(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing putcat command");
   arg->counts[TTSEQNUM*req->idx+TTSEQPUTCAT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   int ksiz = ttsockgetint32(sock);
@@ -1186,7 +1005,7 @@ static void do_putcat(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     if(mask & ((1ULL << TTSEQPUTCAT) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLWRITE))){
       code = 1;
       ttservlog(g_serv, TTLOGINFO, "do_putcat: forbidden");
-    } else if(!tculogadbputcat(ulog, sid, 0, adb, buf, ksiz, buf + ksiz, vsiz)){
+    } else if(!tculogdbputcat(ulog, sid, 0, mdb, buf, ksiz, buf + ksiz, vsiz)){
       arg->counts[TTSEQNUM*req->idx+TTSEQPUTMISS]++;
       code = 1;
       ttservlog(g_serv, TTLOGERROR, "do_putcat: operation failed");
@@ -1208,7 +1027,7 @@ static void do_putshl(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing putshl command");
   arg->counts[TTSEQNUM*req->idx+TTSEQPUTSHL]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   int ksiz = ttsockgetint32(sock);
@@ -1228,7 +1047,7 @@ static void do_putshl(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     if(mask & ((1ULL << TTSEQPUTSHL) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLWRITE))){
       code = 1;
       ttservlog(g_serv, TTLOGINFO, "do_putshl: forbidden");
-    } else if(!tculogadbputshl(ulog, sid, 0, adb, buf, ksiz, buf + ksiz, vsiz, width)){
+    } else if(!tculogdbputshl(ulog, sid, 0, mdb, buf, ksiz, buf + ksiz, vsiz, width)){
       arg->counts[TTSEQNUM*req->idx+TTSEQPUTMISS]++;
       code = 1;
       ttservlog(g_serv, TTLOGERROR, "do_putshl: operation failed");
@@ -1250,7 +1069,7 @@ static void do_putnr(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing putnr command");
   arg->counts[TTSEQNUM*req->idx+TTSEQPUTNR]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   int ksiz = ttsockgetint32(sock);
@@ -1265,11 +1084,10 @@ static void do_putnr(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   pthread_cleanup_push(free, (buf == stack) ? NULL : buf);
   if(ttsockrecv(sock, buf, rsiz) && !ttsockcheckend(sock)){
     uint8_t code = 0;
-    (void)(code);
     if(mask & ((1ULL << TTSEQPUTNR) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLWRITE))){
       code = 1;
       ttservlog(g_serv, TTLOGINFO, "do_putnr: forbidden");
-    } else if(!tculogadbput(ulog, sid, 0, adb, buf, ksiz, buf + ksiz, vsiz)){
+    } else if(!tculogdbput(ulog, sid, 0, mdb, buf, ksiz, buf + ksiz, vsiz)){
       arg->counts[TTSEQNUM*req->idx+TTSEQPUTMISS]++;
       code = 1;
       ttservlog(g_serv, TTLOGERROR, "do_putnr: operation failed");
@@ -1287,7 +1105,7 @@ static void do_out(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing out command");
   arg->counts[TTSEQNUM*req->idx+TTSEQOUT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   int ksiz = ttsockgetint32(sock);
@@ -1303,7 +1121,7 @@ static void do_out(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     if(mask & ((1ULL << TTSEQOUT) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLWRITE))){
       code = 1;
       ttservlog(g_serv, TTLOGINFO, "do_out: forbidden");
-    } else if(!tculogadbout(ulog, sid, 0, adb, buf, ksiz)){
+    } else if(!tculogdbout(ulog, sid, 0, mdb, buf, ksiz)){
       arg->counts[TTSEQNUM*req->idx+TTSEQOUTMISS]++;
       code = 1;
     }
@@ -1324,7 +1142,7 @@ static void do_get(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing get command");
   arg->counts[TTSEQNUM*req->idx+TTSEQGET]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   int ksiz = ttsockgetint32(sock);
   if(ttsockcheckend(sock) || ksiz < 0 || ksiz > MAXARGSIZ){
     ttservlog(g_serv, TTLOGINFO, "do_get: invalid parameters");
@@ -1341,7 +1159,7 @@ static void do_get(TTSOCK *sock, TASKARG *arg, TTREQ *req){
       vsiz = 0;
       ttservlog(g_serv, TTLOGINFO, "do_get: forbidden");
     } else {
-      vbuf = tcadbget(adb, buf, ksiz, &vsiz);
+      vbuf = tcmdbget(mdb, buf, ksiz, &vsiz);
     }
     if(vbuf){
       int rsiz = vsiz + sizeof(uint8_t) + sizeof(uint32_t);
@@ -1380,7 +1198,7 @@ static void do_mget(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing mget command");
   arg->counts[TTSEQNUM*req->idx+TTSEQMGET]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   int rnum = ttsockgetint32(sock);
   if(ttsockcheckend(sock) || rnum < 0 || rnum > MAXARGNUM){
     ttservlog(g_serv, TTLOGINFO, "do_mget: invalid parameters");
@@ -1412,7 +1230,7 @@ static void do_mget(TTSOCK *sock, TASKARG *arg, TTREQ *req){
         int ksiz;
         const char *kbuf = tclistval(keys, i, &ksiz);
         int vsiz;
-        char *vbuf = tcadbget(adb, kbuf, ksiz, &vsiz);
+        char *vbuf = tcmdbget(mdb, kbuf, ksiz, &vsiz);
         if(vbuf){
           num = htonl((uint32_t)ksiz);
           tcxstrcat(xstr, &num, sizeof(num));
@@ -1445,7 +1263,7 @@ static void do_vsiz(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing vsiz command");
   arg->counts[TTSEQNUM*req->idx+TTSEQVSIZ]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   int ksiz = ttsockgetint32(sock);
   if(ttsockcheckend(sock) || ksiz < 0 || ksiz > MAXARGSIZ){
     ttservlog(g_serv, TTLOGINFO, "do_vsiz: invalid parameters");
@@ -1460,7 +1278,7 @@ static void do_vsiz(TTSOCK *sock, TASKARG *arg, TTREQ *req){
       vsiz = -1;
       ttservlog(g_serv, TTLOGINFO, "do_vsiz: forbidden");
     } else {
-      vsiz = tcadbvsiz(adb, buf, ksiz);
+      vsiz = tcmdbvsiz(mdb, buf, ksiz);
     }
     if(vsiz >= 0){
       *stack = 0;
@@ -1492,14 +1310,13 @@ static void do_iterinit(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing iterinit command");
   arg->counts[TTSEQNUM*req->idx+TTSEQITERINIT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   uint8_t code = 0;
   if(mask & ((1ULL << TTSEQITERINIT) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLREAD))){
     code = 1;
     ttservlog(g_serv, TTLOGINFO, "do_iterinit: forbidden");
-  } else if(!tcadbiterinit(adb)){
-    code = 1;
-    ttservlog(g_serv, TTLOGERROR, "do_iterinit: operation failed");
+  } else {
+    tcmdbiterinit(mdb);
   }
   if(ttsocksend(sock, &code, sizeof(code))){
     req->keep = true;
@@ -1514,7 +1331,7 @@ static void do_iternext(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing iternext command");
   arg->counts[TTSEQNUM*req->idx+TTSEQITERNEXT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   int vsiz;
   char *vbuf;
   if(mask & ((1ULL << TTSEQITERNEXT) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLREAD))){
@@ -1522,7 +1339,7 @@ static void do_iternext(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     vsiz = 0;
     ttservlog(g_serv, TTLOGINFO, "do_iternext: forbidden");
   } else {
-    vbuf = tcadbiternext(adb, &vsiz);
+    vbuf = tcmdbiternext(mdb, &vsiz);
   }
   if(vbuf){
     int rsiz = vsiz + sizeof(uint8_t) + sizeof(uint32_t);
@@ -1557,7 +1374,7 @@ static void do_fwmkeys(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing fwmkeys command");
   arg->counts[TTSEQNUM*req->idx+TTSEQFWMKEYS]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   int psiz = ttsockgetint32(sock);
   int max = ttsockgetint32(sock);
   if(ttsockcheckend(sock) || psiz < 0 || psiz > MAXARGSIZ){
@@ -1568,7 +1385,7 @@ static void do_fwmkeys(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   char *buf = (psiz < TTIOBUFSIZ) ? stack : tcmalloc(psiz + 1);
   pthread_cleanup_push(free, (buf == stack) ? NULL : buf);
   if(ttsockrecv(sock, buf, psiz) && !ttsockcheckend(sock)){
-    TCLIST *keys = tcadbfwmkeys(adb, buf, psiz, max);
+    TCLIST *keys = tcmdbfwmkeys(mdb, buf, psiz, max);
     pthread_cleanup_push((void (*)(void *))tclistdel, keys);
     TCXSTR *xstr = tcxstrnew();
     pthread_cleanup_push((void (*)(void *))tcxstrdel, xstr);
@@ -1610,7 +1427,7 @@ static void do_addint(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing addint command");
   arg->counts[TTSEQNUM*req->idx+TTSEQADDINT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   int ksiz = ttsockgetint32(sock);
@@ -1628,7 +1445,7 @@ static void do_addint(TTSOCK *sock, TASKARG *arg, TTREQ *req){
       snum = INT_MIN;
       ttservlog(g_serv, TTLOGINFO, "do_addint: forbidden");
     } else {
-      snum = tculogadbaddint(ulog, sid, 0, adb, buf, ksiz, anum);
+      snum = tculogdbaddint(ulog, sid, 0, mdb, buf, ksiz, anum);
     }
     if(snum != INT_MIN){
       *stack = 0;
@@ -1660,7 +1477,7 @@ static void do_adddouble(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing adddouble command");
   arg->counts[TTSEQNUM*req->idx+TTSEQADDDOUBLE]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   int ksiz = ttsockgetint32(sock);
@@ -1680,7 +1497,7 @@ static void do_adddouble(TTSOCK *sock, TASKARG *arg, TTREQ *req){
       snum = nan("");
       ttservlog(g_serv, TTLOGINFO, "do_adddouble: forbidden");
     } else {
-      snum = tculogadbadddouble(ulog, sid, 0, adb, buf, ksiz, anum);
+      snum = tculogdbadddouble(ulog, sid, 0, mdb, buf, ksiz, anum);
     }
     if(!isnan(snum)){
       *stack = 0;
@@ -1706,174 +1523,19 @@ static void do_adddouble(TTSOCK *sock, TASKARG *arg, TTREQ *req){
 }
 
 
-/* handle the ext command */
-static void do_ext(TTSOCK *sock, TASKARG *arg, TTREQ *req){
-  ttservlog(g_serv, TTLOGDEBUG, "doing ext command");
-  arg->counts[TTSEQNUM*req->idx+TTSEQEXT]++;
-  uint64_t mask = arg->mask;
-  pthread_mutex_t *rmtxs = arg->rmtxs;
-  void *scr = arg->screxts[req->idx];
-  int nsiz = ttsockgetint32(sock);
-  int opts = ttsockgetint32(sock);
-  int ksiz = ttsockgetint32(sock);
-  int vsiz = ttsockgetint32(sock);
-  if(ttsockcheckend(sock) || nsiz < 0 || nsiz >= TTADDRBUFSIZ ||
-     ksiz < 0 || ksiz > MAXARGSIZ || vsiz < 0 || vsiz > MAXARGSIZ){
-    ttservlog(g_serv, TTLOGINFO, "do_ext: invalid parameters");
-    return;
-  }
-  int rsiz = nsiz + ksiz + vsiz;
-  char stack[TTIOBUFSIZ];
-  char *buf = (rsiz < TTIOBUFSIZ) ? stack : tcmalloc(rsiz + 1);
-  pthread_cleanup_push(free, (buf == stack) ? NULL : buf);
-  if(ttsockrecv(sock, buf, rsiz) && !ttsockcheckend(sock)){
-    char name[TTADDRBUFSIZ];
-    memcpy(name, buf, nsiz);
-    name[nsiz] = '\0';
-    const char *kbuf = buf + nsiz;
-    const char *vbuf = kbuf + ksiz;
-    int xsiz = 0;
-    char *xbuf = NULL;
-    if(mask & ((1ULL << TTSEQEXT) | (1ULL << TTSEQALLORG))){
-      ttservlog(g_serv, TTLOGINFO, "do_ext: forbidden");
-    } else if(scr){
-      if(opts & RDBXOLCKGLB){
-        bool err = false;
-        for(int i = 0; i < RECMTXNUM; i++){
-          if(pthread_mutex_lock(rmtxs + i) != 0){
-            ttservlog(g_serv, TTLOGERROR, "do_ext: pthread_mutex_lock failed");
-            while(--i >= 0){
-              pthread_mutex_unlock(rmtxs + i);
-            }
-            err = true;
-            break;
-          }
-        }
-        if(!err){
-          xbuf = scrextcallmethod(scr, name, kbuf, ksiz, vbuf, vsiz, &xsiz);
-          for(int i = RECMTXNUM - 1; i >= 0; i--){
-            if(pthread_mutex_unlock(rmtxs + i) != 0)
-              ttservlog(g_serv, TTLOGERROR, "do_ext: pthread_mutex_unlock failed");
-          }
-        }
-      } else if(opts & RDBXOLCKREC){
-        int mtxidx = recmtxidx(kbuf, ksiz);
-        if(pthread_mutex_lock(rmtxs + mtxidx) == 0){
-          xbuf = scrextcallmethod(scr, name, kbuf, ksiz, vbuf, vsiz, &xsiz);
-          if(pthread_mutex_unlock(rmtxs + mtxidx) != 0)
-            ttservlog(g_serv, TTLOGERROR, "do_ext: pthread_mutex_unlock failed");
-        } else {
-          ttservlog(g_serv, TTLOGERROR, "do_ext: pthread_mutex_lock failed");
-        }
-      } else {
-        xbuf = scrextcallmethod(scr, name, kbuf, ksiz, vbuf, vsiz, &xsiz);
-      }
-    }
-    if(xbuf){
-      int rsiz = xsiz + sizeof(uint8_t) + sizeof(uint32_t);
-      char *rbuf = (rsiz < TTIOBUFSIZ) ? stack : tcmalloc(rsiz);
-      pthread_cleanup_push(free, (rbuf == stack) ? NULL : rbuf);
-      *rbuf = 0;
-      uint32_t num;
-      num = htonl((uint32_t)xsiz);
-      memcpy(rbuf + sizeof(uint8_t), &num, sizeof(uint32_t));
-      memcpy(rbuf + sizeof(uint8_t) + sizeof(uint32_t), xbuf, xsiz);
-      free(xbuf);
-      if(ttsocksend(sock, rbuf, rsiz)){
-        req->keep = true;
-      } else {
-        ttservlog(g_serv, TTLOGINFO, "do_ext: response failed");
-      }
-      pthread_cleanup_pop(1);
-    } else {
-      uint8_t code = 1;
-      if(ttsocksend(sock, &code, sizeof(code))){
-        req->keep = true;
-      } else {
-        ttservlog(g_serv, TTLOGINFO, "do_ext: response failed");
-      }
-    }
-  } else {
-    ttservlog(g_serv, TTLOGINFO, "do_ext: invalid entity");
-  }
-  pthread_cleanup_pop(1);
-}
-
-
-/* handle the sync command */
-static void do_sync(TTSOCK *sock, TASKARG *arg, TTREQ *req){
-  ttservlog(g_serv, TTLOGINFO, "doing sync command");
-  arg->counts[TTSEQNUM*req->idx+TTSEQSYNC]++;
-  uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
-  TCULOG *ulog = arg->ulog;
-  uint32_t sid = arg->sid;
-  uint8_t code = 0;
-  if(mask & ((1ULL << TTSEQSYNC) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLMANAGE))){
-    code = 1;
-    ttservlog(g_serv, TTLOGINFO, "do_sync: forbidden");
-  } else if(!tculogadbsync(ulog, sid, 0, adb)){
-    code = 1;
-    ttservlog(g_serv, TTLOGERROR, "do_sync: operation failed");
-  }
-  if(ttsocksend(sock, &code, sizeof(code))){
-    req->keep = true;
-  } else {
-    ttservlog(g_serv, TTLOGINFO, "do_sync: response failed");
-  }
-}
-
-
-/* handle the optimize command */
-static void do_optimize(TTSOCK *sock, TASKARG *arg, TTREQ *req){
-  ttservlog(g_serv, TTLOGINFO, "doing optimize command");
-  arg->counts[TTSEQNUM*req->idx+TTSEQOPTIMIZE]++;
-  uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
-  TCULOG *ulog = arg->ulog;
-  uint32_t sid = arg->sid;
-  int psiz = ttsockgetint32(sock);
-  if(ttsockcheckend(sock) || psiz < 0 || psiz > MAXARGSIZ){
-    ttservlog(g_serv, TTLOGINFO, "do_optimize: invalid parameters");
-    return;
-  }
-  char stack[TTIOBUFSIZ];
-  char *buf = (psiz < TTIOBUFSIZ) ? stack : tcmalloc(psiz + 1);
-  pthread_cleanup_push(free, (buf == stack) ? NULL : buf);
-  if(ttsockrecv(sock, buf, psiz) && !ttsockcheckend(sock)){
-    buf[psiz] = '\0';
-    uint8_t code = 0;
-    if(mask & ((1ULL << TTSEQOPTIMIZE) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLMANAGE))){
-      code = 1;
-      ttservlog(g_serv, TTLOGINFO, "do_optimize: forbidden");
-    } else if(!tculogadboptimize(ulog, sid, 0, adb, buf)){
-      code = 1;
-    }
-    if(ttsocksend(sock, &code, sizeof(code))){
-      req->keep = true;
-    } else {
-      ttservlog(g_serv, TTLOGINFO, "do_optimize: response failed");
-    }
-  } else {
-    ttservlog(g_serv, TTLOGINFO, "do_optimize: invalid entity");
-  }
-  pthread_cleanup_pop(1);
-}
-
-
 /* handle the vanish command */
 static void do_vanish(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGINFO, "doing vanish command");
   arg->counts[TTSEQNUM*req->idx+TTSEQVANISH]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   uint8_t code = 0;
   if(mask & ((1ULL << TTSEQVANISH) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLWRITE))){
     code = 1;
     ttservlog(g_serv, TTLOGINFO, "do_vanish: forbidden");
-  } else if(!tculogadbvanish(ulog, sid, 0, adb)){
+  } else if(!tculogdbvanish(ulog, sid, 0, mdb)){
     code = 1;
     ttservlog(g_serv, TTLOGERROR, "do_vanish: operation failed");
   }
@@ -1885,48 +1547,12 @@ static void do_vanish(TTSOCK *sock, TASKARG *arg, TTREQ *req){
 }
 
 
-/* handle the copy command */
-static void do_copy(TTSOCK *sock, TASKARG *arg, TTREQ *req){
-  ttservlog(g_serv, TTLOGINFO, "doing copy command");
-  arg->counts[TTSEQNUM*req->idx+TTSEQCOPY]++;
-  uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
-  int psiz = ttsockgetint32(sock);
-  if(ttsockcheckend(sock) || psiz < 0 || psiz > MAXARGSIZ){
-    ttservlog(g_serv, TTLOGINFO, "do_copy: invalid parameters");
-    return;
-  }
-  char stack[TTIOBUFSIZ];
-  char *buf = (psiz < TTIOBUFSIZ) ? stack : tcmalloc(psiz + 1);
-  pthread_cleanup_push(free, (buf == stack) ? NULL : buf);
-  if(ttsockrecv(sock, buf, psiz) && !ttsockcheckend(sock)){
-    buf[psiz] = '\0';
-    uint8_t code = 0;
-    if(mask & ((1ULL << TTSEQCOPY) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLMANAGE))){
-      code = 1;
-      ttservlog(g_serv, TTLOGINFO, "do_copy: forbidden");
-    } else if(!tcadbcopy(adb, buf)){
-      code = 1;
-      ttservlog(g_serv, TTLOGERROR, "do_copy: operation failed");
-    }
-    if(ttsocksend(sock, &code, sizeof(code))){
-      req->keep = true;
-    } else {
-      ttservlog(g_serv, TTLOGINFO, "do_copy: response failed");
-    }
-  } else {
-    ttservlog(g_serv, TTLOGINFO, "do_copy: invalid entity");
-  }
-  pthread_cleanup_pop(1);
-}
-
-
 /* handle the restore command */
 static void do_restore(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGINFO, "doing restore command");
   arg->counts[TTSEQNUM*req->idx+TTSEQRESTORE]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   int psiz = ttsockgetint32(sock);
   uint64_t ts = ttsockgetint64(sock);
@@ -1945,7 +1571,7 @@ static void do_restore(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     if(mask & ((1ULL << TTSEQRESTORE) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLMANAGE))){
       code = 1;
       ttservlog(g_serv, TTLOGINFO, "do_restore: forbidden");
-    } else if(!tculogadbrestore(adb, buf, ts, con, ulog)){
+    } else if(!tculogdbrestore(mdb, buf, ts, con, ulog)){
       code = 1;
       ttservlog(g_serv, TTLOGERROR, "do_restore: operation failed");
     }
@@ -2009,7 +1635,7 @@ static void do_rnum(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing rnum command");
   arg->counts[TTSEQNUM*req->idx+TTSEQRNUM]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   char buf[LINEBUFSIZ];
   *buf = 0;
   uint64_t rnum;
@@ -2017,7 +1643,7 @@ static void do_rnum(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     rnum = 0;
     ttservlog(g_serv, TTLOGINFO, "do_rnum: forbidden");
   } else {
-    rnum = tcadbrnum(adb);
+    rnum = tcmdbrnum(mdb);
   }
   rnum = htonll(rnum);
   memcpy(buf + sizeof(uint8_t), &rnum, sizeof(uint64_t));
@@ -2034,7 +1660,7 @@ static void do_size(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing size command");
   arg->counts[TTSEQNUM*req->idx+TTSEQSIZE]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   char buf[LINEBUFSIZ];
   *buf = 0;
   uint64_t size;
@@ -2042,7 +1668,7 @@ static void do_size(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     size = 0;
     ttservlog(g_serv, TTLOGINFO, "do_size: forbidden");
   } else {
-    size = tcadbsize(adb);
+    size = tcmdbmsiz(mdb);
   }
   size = htonll(size);
   memcpy(buf + sizeof(uint8_t), &size, sizeof(uint64_t));
@@ -2059,7 +1685,7 @@ static void do_stat(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing stat command");
   arg->counts[TTSEQNUM*req->idx+TTSEQSTAT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   REPLARG *sarg = arg->sarg;
   char buf[TTIOBUFSIZ];
   char *wp = buf + sizeof(uint8_t) + sizeof(uint32_t);
@@ -2074,18 +1700,14 @@ static void do_stat(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     wp += sprintf(wp, "time\t%.6f\n", now);
     wp += sprintf(wp, "pid\t%lld\n", (long long)getpid());
     wp += sprintf(wp, "sid\t%d\n", arg->sid);
-    switch(adb->omode){
-      case ADBOVOID: wp += sprintf(wp, "type\tvoid\n"); break;
-      case ADBOMDB: wp += sprintf(wp, "type\ton-memory hash\n"); break;
-      case ADBOHDB: wp += sprintf(wp, "type\thash\n"); break;
-    }
-    const char *path = tcadbpath(adb);
+    wp += sprintf(wp, "type\ton-memory hash\n");
+    const char *path = tcmdbpath(mdb);
     if(path) wp += sprintf(wp, "path\t%s\n", path);
-    wp += sprintf(wp, "rnum\t%llu\n", (unsigned long long)tcadbrnum(adb));
-    wp += sprintf(wp, "size\t%llu\n", (unsigned long long)tcadbsize(adb));
+    wp += sprintf(wp, "rnum\t%llu\n", (unsigned long long)tcmdbrnum(mdb));
+    wp += sprintf(wp, "size\t%llu\n", (unsigned long long)tcmdbmsiz(mdb));
     TCLIST *args = tclistnew2(1);
     pthread_cleanup_push((void (*)(void *))tclistdel, args);
-    TCLIST *res = tcadbmisc(adb, "error", args);
+    TCLIST *res = tcmdbmisc(mdb, "error", args);
     if(res){
       int rnum = tclistnum(res);
       const char *emsg = NULL;
@@ -2141,10 +1763,7 @@ static void do_stat(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   wp += sprintf(wp, "cnt_addint\t%llu\n", (unsigned long long)sumstat(arg, TTSEQADDINT));
   wp += sprintf(wp, "cnt_adddouble\t%llu\n", (unsigned long long)sumstat(arg, TTSEQADDDOUBLE));
   wp += sprintf(wp, "cnt_ext\t%llu\n", (unsigned long long)sumstat(arg, TTSEQEXT));
-  wp += sprintf(wp, "cnt_sync\t%llu\n", (unsigned long long)sumstat(arg, TTSEQSYNC));
-  wp += sprintf(wp, "cnt_optimize\t%llu\n", (unsigned long long)sumstat(arg, TTSEQOPTIMIZE));
   wp += sprintf(wp, "cnt_vanish\t%llu\n", (unsigned long long)sumstat(arg, TTSEQVANISH));
-  wp += sprintf(wp, "cnt_copy\t%llu\n", (unsigned long long)sumstat(arg, TTSEQCOPY));
   wp += sprintf(wp, "cnt_restore\t%llu\n", (unsigned long long)sumstat(arg, TTSEQRESTORE));
   wp += sprintf(wp, "cnt_setmst\t%llu\n", (unsigned long long)sumstat(arg, TTSEQSETMST));
   wp += sprintf(wp, "cnt_rnum\t%llu\n", (unsigned long long)sumstat(arg, TTSEQRNUM));
@@ -2172,7 +1791,7 @@ static void do_misc(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   ttservlog(g_serv, TTLOGDEBUG, "doing misc command");
   arg->counts[TTSEQNUM*req->idx+TTSEQMISC]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   int nsiz = ttsockgetint32(sock);
@@ -2211,7 +1830,7 @@ static void do_misc(TTSOCK *sock, TASKARG *arg, TTREQ *req){
       ttservlog(g_serv, TTLOGINFO, "do_misc: forbidden");
     } else {
       TCLIST *res = (opts & RDBMONOULOG) ?
-        tcadbmisc(adb, name, args) : tculogadbmisc(ulog, sid, 0, adb, name, args);
+        tcmdbmisc(mdb, name, args) : tculogdbmisc(ulog, sid, 0, mdb, name, args);
       if(res){
         for(int i = 0; i < tclistnum(res); i++){
           int esiz;
@@ -2341,7 +1960,7 @@ static void do_mc_set(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, int
   ttservlog(g_serv, TTLOGDEBUG, "doing mc_set command");
   arg->counts[TTSEQNUM*req->idx+TTSEQPUT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   if(tnum < 5){
@@ -2361,7 +1980,7 @@ static void do_mc_set(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, int
     if(mask & ((1ULL << TTSEQPUT) | (1ULL << TTSEQALLMC) | (1ULL << TTSEQALLWRITE))){
       len = sprintf(stack, "CLIENT_ERROR forbidden\r\n");
       ttservlog(g_serv, TTLOGINFO, "do_mc_set: forbidden");
-    } else if(tculogadbput(ulog, sid, 0, adb, kbuf, ksiz, vbuf, vsiz)){
+    } else if(tculogdbput(ulog, sid, 0, mdb, kbuf, ksiz, vbuf, vsiz)){
       len = sprintf(stack, "STORED\r\n");
     } else {
       arg->counts[TTSEQNUM*req->idx+TTSEQPUTMISS]++;
@@ -2385,7 +2004,7 @@ static void do_mc_add(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, int
   ttservlog(g_serv, TTLOGDEBUG, "doing mc_add command");
   arg->counts[TTSEQNUM*req->idx+TTSEQPUTKEEP]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   if(tnum < 5){
@@ -2405,7 +2024,7 @@ static void do_mc_add(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, int
     if(mask & ((1ULL << TTSEQPUTKEEP) | (1ULL << TTSEQALLMC) | (1ULL << TTSEQALLWRITE))){
       len = sprintf(stack, "CLIENT_ERROR forbidden\r\n");
       ttservlog(g_serv, TTLOGINFO, "do_mc_add: forbidden");
-    } else if(tculogadbputkeep(ulog, sid, 0, adb, kbuf, ksiz, vbuf, vsiz)){
+    } else if(tculogdbputkeep(ulog, sid, 0, mdb, kbuf, ksiz, vbuf, vsiz)){
       len = sprintf(stack, "STORED\r\n");
     } else {
       arg->counts[TTSEQNUM*req->idx+TTSEQPUTMISS]++;
@@ -2428,7 +2047,7 @@ static void do_mc_replace(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens,
   ttservlog(g_serv, TTLOGDEBUG, "doing mc_replace command");
   arg->counts[TTSEQNUM*req->idx+TTSEQPUT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   pthread_mutex_t *rmtxs = arg->rmtxs;
@@ -2454,8 +2073,8 @@ static void do_mc_replace(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens,
       if(pthread_mutex_lock(rmtxs + mtxidx) != 0){
         len = sprintf(stack, "SERVER_ERROR unexpected\r\n");
         ttservlog(g_serv, TTLOGERROR, "do_mc_replace: pthread_mutex_lock failed");
-      } else if(tcadbvsiz(adb, kbuf, ksiz) >= 0){
-        if(tculogadbput(ulog, sid, 0, adb, kbuf, ksiz, vbuf, vsiz)){
+      } else if(tcmdbvsiz(mdb, kbuf, ksiz) >= 0){
+        if(tculogdbput(ulog, sid, 0, mdb, kbuf, ksiz, vbuf, vsiz)){
           len = sprintf(stack, "STORED\r\n");
         } else {
           len = sprintf(stack, "SERVER_ERROR unexpected\r\n");
@@ -2485,7 +2104,7 @@ static void do_mc_append(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, 
   ttservlog(g_serv, TTLOGDEBUG, "doing mc_append command");
   arg->counts[TTSEQNUM*req->idx+TTSEQPUT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   pthread_mutex_t *rmtxs = arg->rmtxs;
@@ -2511,8 +2130,8 @@ static void do_mc_append(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, 
       if(pthread_mutex_lock(rmtxs + mtxidx) != 0){
         len = sprintf(stack, "SERVER_ERROR unexpected\r\n");
         ttservlog(g_serv, TTLOGERROR, "do_mc_append: pthread_mutex_lock failed");
-      } else if(tcadbvsiz(adb, kbuf, ksiz) >= 0){
-        if(tculogadbputcat(ulog, sid, 0, adb, kbuf, ksiz, vbuf, vsiz)){
+      } else if(tcmdbvsiz(mdb, kbuf, ksiz) >= 0){
+        if(tculogdbputcat(ulog, sid, 0, mdb, kbuf, ksiz, vbuf, vsiz)){
           len = sprintf(stack, "STORED\r\n");
         } else {
           len = sprintf(stack, "SERVER_ERROR unexpected\r\n");
@@ -2542,7 +2161,7 @@ static void do_mc_prepend(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens,
   ttservlog(g_serv, TTLOGDEBUG, "doing mc_prepend command");
   arg->counts[TTSEQNUM*req->idx+TTSEQPUT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   pthread_mutex_t *rmtxs = arg->rmtxs;
@@ -2570,11 +2189,11 @@ static void do_mc_prepend(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens,
       if(pthread_mutex_lock(rmtxs + mtxidx) != 0){
         len = sprintf(stack, "SERVER_ERROR unexpected\r\n");
         ttservlog(g_serv, TTLOGERROR, "do_mc_prepend: pthread_mutex_lock failed");
-      } else if((obuf = tcadbget(adb, kbuf, ksiz, &osiz)) != NULL){
+      } else if((obuf = tcmdbget(mdb, kbuf, ksiz, &osiz)) != NULL){
         char *nbuf = tcmalloc(vsiz + osiz + 1);
         memcpy(nbuf, vbuf, vsiz);
         memcpy(nbuf + vsiz, obuf, osiz);
-        tculogadbput(ulog, sid, 0, adb, kbuf, ksiz, nbuf, vsiz + osiz);
+        tculogdbput(ulog, sid, 0, mdb, kbuf, ksiz, nbuf, vsiz + osiz);
         len = sprintf(stack, "STORED\r\n");
         free(nbuf);
         free(obuf);
@@ -2601,7 +2220,7 @@ static void do_mc_prepend(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens,
 static void do_mc_get(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, int tnum){
   ttservlog(g_serv, TTLOGDEBUG, "doing mc_get command");
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   if(tnum < 2){
     ttsockprintf(sock, "CLIENT_ERROR error\r\n");
     return;
@@ -2619,7 +2238,7 @@ static void do_mc_get(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, int
       vsiz = 0;
       ttservlog(g_serv, TTLOGINFO, "do_mc_get: forbidden");
     } else {
-      vbuf = tcadbget(adb, kbuf, ksiz, &vsiz);
+      vbuf = tcmdbget(mdb, kbuf, ksiz, &vsiz);
     }
     if(vbuf){
       tcxstrprintf(xstr, "VALUE %s 0 %d\r\n", kbuf, vsiz);
@@ -2645,7 +2264,7 @@ static void do_mc_delete(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, 
   ttservlog(g_serv, TTLOGDEBUG, "doing mc_delete command");
   arg->counts[TTSEQNUM*req->idx+TTSEQOUT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   if(tnum < 2){
@@ -2661,7 +2280,7 @@ static void do_mc_delete(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, 
   if(mask & ((1ULL << TTSEQOUT) | (1ULL << TTSEQALLMC) | (1ULL << TTSEQALLWRITE))){
     len = sprintf(stack, "CLIENT_ERROR forbidden\r\n");
     ttservlog(g_serv, TTLOGINFO, "do_mc_delete: forbidden");
-  } else if(tculogadbout(ulog, sid, 0, adb, kbuf, ksiz)){
+  } else if(tculogdbout(ulog, sid, 0, mdb, kbuf, ksiz)){
     len = sprintf(stack, "DELETED\r\n");
   } else {
     arg->counts[TTSEQNUM*req->idx+TTSEQOUTMISS]++;
@@ -2680,7 +2299,7 @@ static void do_mc_incr(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, in
   ttservlog(g_serv, TTLOGDEBUG, "doing mc_incr command");
   arg->counts[TTSEQNUM*req->idx+TTSEQADDINT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   pthread_mutex_t *rmtxs = arg->rmtxs;
@@ -2705,12 +2324,12 @@ static void do_mc_incr(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, in
       return;
     }
     int vsiz;
-    char *vbuf = tcadbget(adb, kbuf, ksiz, &vsiz);
+    char *vbuf = tcmdbget(mdb, kbuf, ksiz, &vsiz);
     if(vbuf){
       num += tcatoi(vbuf);
       if(num < 0) num = 0;
       len = sprintf(stack, "%lld", (long long)num);
-      if(tculogadbput(ulog, sid, 0, adb, kbuf, ksiz, stack, len)){
+      if(tculogdbput(ulog, sid, 0, mdb, kbuf, ksiz, stack, len)){
         len = sprintf(stack, "%lld\r\n", (long long)num);
       } else {
         len = sprintf(stack, "SERVER_ERROR unexpected\r\n");
@@ -2736,7 +2355,7 @@ static void do_mc_decr(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, in
   ttservlog(g_serv, TTLOGDEBUG, "doing mc_decr command");
   arg->counts[TTSEQNUM*req->idx+TTSEQADDINT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   pthread_mutex_t *rmtxs = arg->rmtxs;
@@ -2761,12 +2380,12 @@ static void do_mc_decr(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, in
       return;
     }
     int vsiz;
-    char *vbuf = tcadbget(adb, kbuf, ksiz, &vsiz);
+    char *vbuf = tcmdbget(mdb, kbuf, ksiz, &vsiz);
     if(vbuf){
       num += tcatoi(vbuf);
       if(num < 0) num = 0;
       len = sprintf(stack, "%lld", (long long)num);
-      if(tculogadbput(ulog, sid, 0, adb, kbuf, ksiz, stack, len)){
+      if(tculogdbput(ulog, sid, 0, mdb, kbuf, ksiz, stack, len)){
         len = sprintf(stack, "%lld\r\n", (long long)num);
       } else {
         len = sprintf(stack, "SERVER_ERROR unexpected\r\n");
@@ -2792,7 +2411,7 @@ static void do_mc_stats(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, i
   ttservlog(g_serv, TTLOGDEBUG, "doing mc_stats command");
   arg->counts[TTSEQNUM*req->idx+TTSEQSTAT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   char stack[TTIOBUFSIZ];
   char *wp = stack;
   if(mask & ((1ULL << TTSEQSTAT) | (1ULL << TTSEQALLMC) | (1ULL << TTSEQALLREAD))){
@@ -2829,10 +2448,10 @@ static void do_mc_stats(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, i
     wp += sprintf(wp, "STAT cmd_get_hits %llu\r\n", (unsigned long long)(getsum - getmiss));
     wp += sprintf(wp, "STAT cmd_get_misses %llu\r\n", (unsigned long long)getmiss);
     wp += sprintf(wp, "STAT cmd_flush %llu\r\n", (unsigned long long)sumstat(arg, TTSEQVANISH));
-    int64_t rnum = tcadbrnum(adb);
+    int64_t rnum = tcmdbrnum(mdb);
     wp += sprintf(wp, "STAT curr_items %lld\r\n", (long long)rnum);
     wp += sprintf(wp, "STAT total_items %lld\r\n", (long long)rnum);
-    wp += sprintf(wp, "STAT bytes %lld\r\n", (long long)tcadbsize(adb));
+    wp += sprintf(wp, "STAT bytes %lld\r\n", (long long)tcmdbmsiz(mdb));
     wp += sprintf(wp, "STAT threads %d\r\n", arg->thnum);
     wp += sprintf(wp, "END\r\n");
   }
@@ -2849,7 +2468,7 @@ static void do_mc_flushall(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens
   ttservlog(g_serv, TTLOGINFO, "doing mc_flushall command");
   arg->counts[TTSEQNUM*req->idx+TTSEQVANISH]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   bool nr = (tnum > 1 && !strcmp(tokens[1], "noreply")) ||
@@ -2859,7 +2478,7 @@ static void do_mc_flushall(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens
   if(mask & ((1ULL << TTSEQVANISH) | (1ULL << TTSEQALLMC) | (1ULL << TTSEQALLWRITE))){
     len = sprintf(stack, "CLIENT_ERROR forbidden\r\n");
     ttservlog(g_serv, TTLOGINFO, "do_mc_flushall: forbidden");
-  } else if(tculogadbvanish(ulog, sid, 0, adb)){
+  } else if(tculogdbvanish(ulog, sid, 0, mdb)){
     len = sprintf(stack, "OK\r\n");
   } else {
     len = sprintf(stack, "SERVER_ERROR unexpected\r\n");
@@ -2905,7 +2524,7 @@ static void do_http_get(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const c
   ttservlog(g_serv, TTLOGDEBUG, "doing http_get command");
   arg->counts[TTSEQNUM*req->idx+TTSEQGET]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   bool keep = ver >= 1;
   char line[LINEBUFSIZ];
   while(ttsockgets(sock, line, LINEBUFSIZ) && *line != '\0'){
@@ -2939,7 +2558,7 @@ static void do_http_get(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const c
     ttservlog(g_serv, TTLOGINFO, "do_http_get: forbidden");
   } else {
     int vsiz;
-    char *vbuf = tcadbget(adb, kbuf, ksiz, &vsiz);
+    char *vbuf = tcmdbget(mdb, kbuf, ksiz, &vsiz);
     if(vbuf){
       tcxstrprintf(xstr, "HTTP/1.1 200 OK\r\n");
       tcxstrprintf(xstr, "Content-Type: application/octet-stream\r\n");
@@ -2972,7 +2591,7 @@ static void do_http_head(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const 
   ttservlog(g_serv, TTLOGDEBUG, "doing http_head command");
   arg->counts[TTSEQNUM*req->idx+TTSEQVSIZ]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   bool keep = ver >= 1;
   char line[LINEBUFSIZ];
   while(ttsockgets(sock, line, LINEBUFSIZ) && *line != '\0'){
@@ -3001,7 +2620,7 @@ static void do_http_head(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const 
     tcxstrprintf(xstr, "\r\n");
     ttservlog(g_serv, TTLOGINFO, "do_http_head: forbidden");
   } else {
-    int vsiz = tcadbvsiz(adb, kbuf, ksiz);
+    int vsiz = tcmdbvsiz(mdb, kbuf, ksiz);
     if(vsiz >= 0){
       tcxstrprintf(xstr, "HTTP/1.1 200 OK\r\n");
       tcxstrprintf(xstr, "Content-Type: application/octet-stream\r\n");
@@ -3027,7 +2646,7 @@ static void do_http_put(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const c
   ttservlog(g_serv, TTLOGDEBUG, "doing http_put command");
   arg->counts[TTSEQNUM*req->idx+TTSEQPUT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   bool keep = ver >= 1;
@@ -3074,7 +2693,7 @@ static void do_http_put(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const c
     } else {
       switch(pdmode){
         case 1:
-          if(tculogadbputkeep(ulog, sid, 0, adb, kbuf, ksiz, vbuf, vsiz)){
+          if(tculogdbputkeep(ulog, sid, 0, mdb, kbuf, ksiz, vbuf, vsiz)){
             int len = sprintf(line, "Created\n");
             tcxstrprintf(xstr, "HTTP/1.1 201 Created\r\n");
             tcxstrprintf(xstr, "Content-Type: text/plain\r\n");
@@ -3092,7 +2711,7 @@ static void do_http_put(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const c
           }
           break;
         case 2:
-          if(tculogadbputcat(ulog, sid, 0, adb, kbuf, ksiz, vbuf, vsiz)){
+          if(tculogdbputcat(ulog, sid, 0, mdb, kbuf, ksiz, vbuf, vsiz)){
             int len = sprintf(line, "Created\n");
             tcxstrprintf(xstr, "HTTP/1.1 201 Created\r\n");
             tcxstrprintf(xstr, "Content-Type: text/plain\r\n");
@@ -3111,7 +2730,7 @@ static void do_http_put(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const c
           }
           break;
         default:
-          if(tculogadbput(ulog, sid, 0, adb, kbuf, ksiz, vbuf, vsiz)){
+          if(tculogdbput(ulog, sid, 0, mdb, kbuf, ksiz, vbuf, vsiz)){
             int len = sprintf(line, "Created\n");
             tcxstrprintf(xstr, "HTTP/1.1 201 Created\r\n");
             tcxstrprintf(xstr, "Content-Type: text/plain\r\n");
@@ -3149,9 +2768,7 @@ static void do_http_post(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const 
   ttservlog(g_serv, TTLOGDEBUG, "doing http_post command");
   arg->counts[TTSEQNUM*req->idx+TTSEQEXT]++;
   uint64_t mask = arg->mask;
-  pthread_mutex_t *rmtxs = arg->rmtxs;
-  void *scr = arg->screxts[req->idx];
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   bool keep = ver >= 1;
@@ -3217,39 +2834,6 @@ static void do_http_post(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const 
       } else {
         int xsiz = 0;
         char *xbuf = NULL;
-        if(scr){
-          if(xopts & RDBXOLCKGLB){
-            bool err = false;
-            for(int i = 0; i < RECMTXNUM; i++){
-              if(pthread_mutex_lock(rmtxs + i) != 0){
-                ttservlog(g_serv, TTLOGERROR, "do_http_post: pthread_mutex_lock failed");
-                while(--i >= 0){
-                  pthread_mutex_unlock(rmtxs + i);
-                }
-                err = true;
-                break;
-              }
-            }
-            if(!err){
-              xbuf = scrextcallmethod(scr, xname, kbuf, ksiz, vbuf, vsiz, &xsiz);
-              for(int i = RECMTXNUM - 1; i >= 0; i--){
-                if(pthread_mutex_unlock(rmtxs + i) != 0)
-                  ttservlog(g_serv, TTLOGERROR, "do_http_post: pthread_mutex_unlock failed");
-              }
-            }
-          } else if(xopts & RDBXOLCKREC){
-            int mtxidx = recmtxidx(kbuf, ksiz);
-            if(pthread_mutex_lock(rmtxs + mtxidx) == 0){
-              xbuf = scrextcallmethod(scr, xname, kbuf, ksiz, vbuf, vsiz, &xsiz);
-              if(pthread_mutex_unlock(rmtxs + mtxidx) != 0)
-                ttservlog(g_serv, TTLOGERROR, "do_http_post: pthread_mutex_unlock failed");
-            } else {
-              ttservlog(g_serv, TTLOGERROR, "do_http_post: pthread_mutex_lock failed");
-            }
-          } else {
-            xbuf = scrextcallmethod(scr, xname, kbuf, ksiz, vbuf, vsiz, &xsiz);
-          }
-        }
         if(xbuf){
           tcxstrprintf(xstr, "HTTP/1.1 200 OK\r\n");
           tcxstrprintf(xstr, "Content-Type: application/octet-stream\r\n");
@@ -3282,7 +2866,7 @@ static void do_http_post(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, const 
         TCLIST *args = tcmapvals(params);
         pthread_cleanup_push((void (*)(void *))tclistdel, args);
         TCLIST *res = (mopts & RDBMONOULOG) ?
-          tcadbmisc(adb, mname, args) : tculogadbmisc(ulog, sid, 0, adb, mname, args);
+          tcmdbmisc(mdb, mname, args) : tculogdbmisc(ulog, sid, 0, mdb, mname, args);
         if(res){
           TCXSTR *rbuf = tcxstrnew();
           for(int i = 0; i < tclistnum(res); i++){
@@ -3340,7 +2924,7 @@ static void do_http_delete(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, cons
   ttservlog(g_serv, TTLOGDEBUG, "doing http_delete command");
   arg->counts[TTSEQNUM*req->idx+TTSEQOUT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   TCULOG *ulog = arg->ulog;
   uint32_t sid = arg->sid;
   bool keep = ver >= 1;
@@ -3375,7 +2959,7 @@ static void do_http_delete(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, cons
     tcxstrcat(xstr, line, len);
     ttservlog(g_serv, TTLOGINFO, "do_http_delete: forbidden");
   } else {
-    if(tculogadbout(ulog, sid, 0, adb, kbuf, ksiz)){
+    if(tculogdbout(ulog, sid, 0, mdb, kbuf, ksiz)){
       int len = sprintf(line, "OK\n");
       tcxstrprintf(xstr, "HTTP/1.1 200 OK\r\n");
       tcxstrprintf(xstr, "Content-Type: text/plain\r\n");
@@ -3407,7 +2991,7 @@ static void do_http_options(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, con
   ttservlog(g_serv, TTLOGDEBUG, "doing http_options command");
   arg->counts[TTSEQNUM*req->idx+TTSEQSTAT]++;
   uint64_t mask = arg->mask;
-  TCADB *adb = arg->adb;
+  TCMDB *mdb = arg->mdb;
   REPLARG *sarg = arg->sarg;
   bool keep = ver >= 1;
   char line[LINEBUFSIZ];
@@ -3454,15 +3038,11 @@ static void do_http_options(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, con
     tcxstrprintf(xstr, "X-TT-TIME: %.6f\r\n", now);
     tcxstrprintf(xstr, "X-TT-PID: %lld\r\n", (long long)getpid());
     tcxstrprintf(xstr, "X-TT-SID: %d\r\n", arg->sid);
-    switch(adb->omode){
-      case ADBOVOID: tcxstrprintf(xstr, "X-TT-TYPE: void\r\n"); break;
-      case ADBOMDB: tcxstrprintf(xstr, "X-TT-TYPE: on-memory hash\r\n"); break;
-      case ADBOHDB: tcxstrprintf(xstr, "X-TT-TYPE: hash\r\n"); break;
-    }
-    const char *path = tcadbpath(adb);
+    tcxstrprintf(xstr, "X-TT-TYPE: on-memory hash\r\n");
+    const char *path = tcmdbpath(mdb);
     if(path) tcxstrprintf(xstr, "X-TT-PATH: %s\r\n", path);
-    tcxstrprintf(xstr, "X-TT-RNUM: %llu\r\n", (unsigned long long)tcadbrnum(adb));
-    tcxstrprintf(xstr, "X-TT-SIZE: %llu\r\n", (unsigned long long)tcadbsize(adb));
+    tcxstrprintf(xstr, "X-TT-RNUM: %llu\r\n", (unsigned long long)tcmdbrnum(mdb));
+    tcxstrprintf(xstr, "X-TT-SIZE: %llu\r\n", (unsigned long long)tcmdbmsiz(mdb));
     tcxstrprintf(xstr, "X-TT-BIGEND: %d\r\n", TCBIGEND);
     if(sarg->host[0] != '\0'){
       tcxstrprintf(xstr, "X-TT-MHOST: %s\r\n", sarg->host);
@@ -3504,36 +3084,10 @@ static void do_http_options(TTSOCK *sock, TASKARG *arg, TTREQ *req, int ver, con
 /* handle the termination event */
 static void do_term(void *opq){
   TERMARG *arg = (TERMARG *)opq;
-  int thnum = arg->thnum;
-  TCADB *adb = arg->adb;
   REPLARG *sarg = arg->sarg;
-  void **screxts = arg->screxts;
-  EXTPCARG *pcargs = arg->pcargs;
-  int pcnum = arg->pcnum;
   if(sarg->host[0] != '\0') tcsleep(REPLPERIOD * 1.2);
   if(g_restart) return;
-  if(pcargs){
-    for(int i = 0; i < pcnum; i++){
-      EXTPCARG *pcarg = pcargs + i;
-      if(!pcarg->scrext) continue;
-      if(!scrextkill(pcarg->scrext)){
-        arg->err = true;
-        ttservlog(g_serv, TTLOGERROR, "scrextkill failed");
-      }
-    }
-  }
-  for(int i = 0; i < thnum; i++){
-    if(!screxts[i]) continue;
-    if(!scrextkill(screxts[i])){
-      arg->err = true;
-      ttservlog(g_serv, TTLOGERROR, "scrextkill failed");
-    }
-  }
   ttservlog(g_serv, TTLOGSYSTEM, "closing the database");
-  if(!tcadbclose(adb)){
-    arg->err = true;
-    ttservlog(g_serv, TTLOGERROR, "tcadbclose failed");
-  }
 }
 
 

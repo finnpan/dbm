@@ -864,6 +864,27 @@ typedef struct {                         /* type of structure for a on-memory ha
 } TCMDB;
 
 
+const char *tcmdbpath(TCMDB *mdb);
+
+
+/* Call a versatile function for miscellaneous operations of a database object.
+   `mdb' specifies the database object.
+   `name' specifies the name of the function.  All databases support "put", "out", "get",
+   "putlist", "outlist", "getlist", and "getpart".  "put" is to store a record.  It receives a
+   key and a value, and returns an empty list.  "out" is to remove a record.  It receives a key,
+   and returns an empty list.  "get" is to retrieve a record.  It receives a key, and returns a
+   list of the values.  "putlist" is to store records.  It receives keys and values one after the
+   other, and returns an empty list.  "outlist" is to remove records.  It receives keys, and
+   returns an empty list.  "getlist" is to retrieve records.  It receives keys, and returns keys
+   and values of corresponding records one after the other.  "getpart" is to retrieve the partial
+   value of a record.  It receives a key, the offset of the region, and the length of the region.
+   `args' specifies a list object containing arguments.
+   If successful, the return value is a list object of the result.  `NULL' is returned on failure.
+   Because the object of the return value is created with the function `tclistnew', it
+   should be deleted with the function `tclistdel' when it is no longer in use. */
+TCLIST *tcmdbmisc(TCMDB *mdb, const char *name, const TCLIST *args);
+
+
 /* Create an on-memory hash database object.
    The return value is the new on-memory hash database object.
    The object can be shared by plural threads because of the internal mutex. */
@@ -1778,7 +1799,6 @@ enum {                                   /* enumeration for error codes */
   TCEOPEN,                               /* open error */
   TCECLOSE,                              /* close error */
   TCETRUNC,                              /* trunc error */
-  TCESYNC,                               /* sync error */
   TCESTAT,                               /* stat error */
   TCESEEK,                               /* seek error */
   TCEREAD,                               /* read error */
@@ -1858,37 +1878,6 @@ typedef union { int32_t i; int64_t l; double d; void *p; TCCMP f; } tcgeneric_t;
 #define TCALIGNPAD(TC_hsiz) \
   (((TC_hsiz | ~-TCALIGNOF(tcgeneric_t)) + 1) - TC_hsiz)
 
-
-
-/*************************************************************************************************
- * for ZLIB
- *************************************************************************************************/
-
-
-enum {
-  _TCZMZLIB,
-  _TCZMRAW,
-  _TCZMGZIP
-};
-
-
-extern char *(*_tc_deflate)(const char *, int, int *, int);
-extern char *(*_tc_inflate)(const char *, int, int *, int);
-extern unsigned int (*_tc_getcrc)(const char *, int);
-
-
-extern char *(*_tc_bzcompress)(const char *, int, int *);
-extern char *(*_tc_bzdecompress)(const char *, int, int *);
-
-
-/* set a buffer for a variable length number */
-void tcsetvnumbuf32 (uint32_t TC_num, int* TC_len, char* TC_buf);
-void tcsetvnumbuf64 (uint64_t TC_num, int* TC_len, char* TC_buf);
-
-
-/* read a variable length buffer */
-void tcreadvnumbuf32 (const char* TC_buf, int TC_step, uint32_t* TC_num);
-void tcreadvnumbuf64 (const char* TC_buf, int TC_step, uint64_t* TC_num);
 
 
 __UTIL_CLINKAGEEND

@@ -1708,6 +1708,206 @@ void tcmapprintf(TCMAP *map, const char *kstr, const char *format, ...){
   } while(false)
 
 
+const char *tcmdbpath(TCMDB *mdb){
+  assert(mdb);
+  const char *rv = "*";
+  return rv;
+}
+
+
+TCLIST *tcmdbmisc(TCMDB *mdb, const char *name, const TCLIST *args){
+  assert(mdb && name && args);
+  int argc = tclistnum(args);
+  TCLIST *rv;
+  if(!strcmp(name, "put") || !strcmp(name, "putkeep") || !strcmp(name, "putcat")){
+    if(argc > 1){
+      rv = tclistnew2(1);
+      const char *kbuf;
+      int ksiz;
+      TCLISTVAL(kbuf, args, 0, ksiz);
+      const char *vbuf;
+      int vsiz;
+      TCLISTVAL(vbuf, args, 1, vsiz);
+      bool err = false;
+      if(!strcmp(name, "put")){
+        tcmdbput(mdb, kbuf, ksiz, vbuf, vsiz);
+      } else if(!strcmp(name, "putkeep")){
+        if(!tcmdbputkeep(mdb, kbuf, ksiz, vbuf, vsiz)) err = true;
+      } else if(!strcmp(name, "putcat")){
+        tcmdbputcat(mdb, kbuf, ksiz, vbuf, vsiz);
+      }
+      if(err){
+        tclistdel(rv);
+        rv = NULL;
+      }
+    } else {
+      rv = NULL;
+    }
+  } else if(!strcmp(name, "out")){
+    if(argc > 0){
+      rv = tclistnew2(1);
+      const char *kbuf;
+      int ksiz;
+      TCLISTVAL(kbuf, args, 0, ksiz);
+      if(!tcmdbout(mdb, kbuf, ksiz)){
+        tclistdel(rv);
+        rv = NULL;
+      }
+    } else {
+      rv = NULL;
+    }
+  } else if(!strcmp(name, "get")){
+    if(argc > 0){
+      rv = tclistnew2(1);
+      const char *kbuf;
+      int ksiz;
+      TCLISTVAL(kbuf, args, 0, ksiz);
+      int vsiz;
+      char *vbuf = tcmdbget(mdb, kbuf, ksiz, &vsiz);
+      if(vbuf){
+        tclistpush(rv, vbuf, vsiz);
+        free(vbuf);
+      } else {
+        tclistdel(rv);
+        rv = NULL;
+      }
+    } else {
+      rv = NULL;
+    }
+  } else if(!strcmp(name, "putlist")){
+    rv = tclistnew2(1);
+    argc--;
+    for(int i = 0; i < argc; i += 2){
+      const char *kbuf, *vbuf;
+      int ksiz, vsiz;
+      TCLISTVAL(kbuf, args, i, ksiz);
+      TCLISTVAL(vbuf, args, i + 1, vsiz);
+      tcmdbput(mdb, kbuf, ksiz, vbuf, vsiz);
+    }
+  } else if(!strcmp(name, "outlist")){
+    rv = tclistnew2(1);
+    for(int i = 0; i < argc; i++){
+      const char *kbuf;
+      int ksiz;
+      TCLISTVAL(kbuf, args, i, ksiz);
+      tcmdbout(mdb, kbuf, ksiz);
+    }
+  } else if(!strcmp(name, "getlist")){
+    rv = tclistnew2(argc * 2);
+    for(int i = 0; i < argc; i++){
+      const char *kbuf;
+      int ksiz;
+      TCLISTVAL(kbuf, args, i, ksiz);
+      int vsiz;
+      char *vbuf = tcmdbget(mdb, kbuf, ksiz, &vsiz);
+      if(vbuf){
+        tclistpush(rv, kbuf, ksiz);
+        tclistpush(rv, vbuf, vsiz);
+        free(vbuf);
+      }
+    }
+  } else if(!strcmp(name, "getpart")){
+    if(argc > 0){
+      const char *kbuf;
+      int ksiz;
+      TCLISTVAL(kbuf, args, 0, ksiz);
+      int off = argc > 1 ? tcatoi(TCLISTVALPTR(args, 1)) : 0;
+      if(off < 0) off = 0;
+      if(off > INT_MAX / 2 - 1) off = INT_MAX - 1;
+      int len = argc > 2 ? tcatoi(TCLISTVALPTR(args, 2)) : -1;
+      if(len < 0 || len > INT_MAX / 2) len = INT_MAX / 2;
+      int vsiz;
+      char *vbuf = tcmdbget(mdb, kbuf, ksiz, &vsiz);
+      if(vbuf){
+        if(off < vsiz){
+          rv = tclistnew2(1);
+          vsiz -= off;
+          if(vsiz > len) vsiz = len;
+          if(off > 0) memmove(vbuf, vbuf + off, vsiz);
+          tclistpushmalloc(rv, vbuf, vsiz);
+        } else {
+          rv = NULL;
+          free(vbuf);
+        }
+      } else {
+        rv = NULL;
+      }
+    } else {
+      rv = NULL;
+    }
+  } else if(!strcmp(name, "iterinit")){
+    rv = tclistnew2(1);
+    if(argc > 0){
+      const char *kbuf;
+      int ksiz;
+      TCLISTVAL(kbuf, args, 0, ksiz);
+      tcmdbiterinit2(mdb, kbuf, ksiz);
+    } else {
+      tcmdbiterinit(mdb);
+    }
+  } else if(!strcmp(name, "iternext")){
+    rv = tclistnew2(1);
+    int ksiz;
+    char *kbuf = tcmdbiternext(mdb, &ksiz);
+    if(kbuf){
+      tclistpush(rv, kbuf, ksiz);
+      int vsiz;
+      char *vbuf = tcmdbget(mdb, kbuf, ksiz, &vsiz);
+      if(vbuf){
+        tclistpush(rv, vbuf, vsiz);
+        free(vbuf);
+      }
+      free(kbuf);
+    } else {
+      tclistdel(rv);
+      rv = NULL;
+    }
+  } else if(!strcmp(name, "vanish")){
+    rv = tclistnew2(1);
+    tcmdbvanish(mdb);
+  } else if(!strcmp(name, "regex")){
+    if(argc > 0){
+      const char *regex = TCLISTVALPTR(args, 0);
+      int options = REG_EXTENDED | REG_NOSUB;
+      if(*regex == '*'){
+        options |= REG_ICASE;
+        regex++;
+      }
+      regex_t rbuf;
+      if(regcomp(&rbuf, regex, options) == 0){
+        rv = tclistnew();
+        int max = argc > 1 ? tcatoi(TCLISTVALPTR(args, 1)) : 0;
+        if(max < 1) max = INT_MAX;
+        tcmdbiterinit(mdb);
+        char *kbuf;
+        int ksiz;
+        while(max > 0 && (kbuf = tcmdbiternext(mdb, &ksiz))){
+          if(regexec(&rbuf, kbuf, 0, NULL, 0) == 0){
+            int vsiz;
+            char *vbuf = tcmdbget(mdb, kbuf, ksiz, &vsiz);
+            if(vbuf){
+              tclistpush(rv, kbuf, ksiz);
+              tclistpush(rv, vbuf, vsiz);
+              free(vbuf);
+              max--;
+            }
+          }
+          free(kbuf);
+        }
+        regfree(&rbuf);
+      } else {
+        rv = NULL;
+      }
+    } else {
+      rv = NULL;
+    }
+  } else {
+    rv = NULL;
+  }
+  return rv;
+}
+
+
 /* Create an on-memory hash database object. */
 TCMDB *tcmdbnew(void){
   return tcmdbnew2(TCMDBDEFBNUM);
@@ -4511,7 +4711,6 @@ const char *tcerrmsg(int ecode){
     case TCEOPEN: return "open error";
     case TCECLOSE: return "close error";
     case TCETRUNC: return "trunc error";
-    case TCESYNC: return "sync error";
     case TCESTAT: return "stat error";
     case TCESEEK: return "seek error";
     case TCEREAD: return "read error";
@@ -5209,261 +5408,6 @@ static int tcgammadecode(const char *ptr, int size, char *obuf){
   return wp - obuf;
 }
 
-
-
-/*************************************************************************************************
- * for ZLIB
- *************************************************************************************************/
-
-
-#include <zlib.h>
-#define ZLIBBUFSIZ     8192
-
-
-static char *_tc_deflate_impl(const char *ptr, int size, int *sp, int mode);
-static char *_tc_inflate_impl(const char *ptr, int size, int *sp, int mode);
-static unsigned int _tc_getcrc_impl(const char *ptr, int size);
-
-
-char *(*_tc_deflate)(const char *, int, int *, int) = _tc_deflate_impl;
-char *(*_tc_inflate)(const char *, int, int *, int) = _tc_inflate_impl;
-unsigned int (*_tc_getcrc)(const char *, int) = _tc_getcrc_impl;
-char *(*_tc_bzcompress)(const char *, int, int *) = NULL;
-char *(*_tc_bzdecompress)(const char *, int, int *) = NULL;
-
-
-static char *_tc_deflate_impl(const char *ptr, int size, int *sp, int mode){
-  assert(ptr && size >= 0 && sp);
-  z_stream zs;
-  zs.zalloc = Z_NULL;
-  zs.zfree = Z_NULL;
-  zs.opaque = Z_NULL;
-  switch(mode){
-    case _TCZMRAW:
-      if(deflateInit2(&zs, 5, Z_DEFLATED, -15, 7, Z_DEFAULT_STRATEGY) != Z_OK)
-        return NULL;
-      break;
-    case _TCZMGZIP:
-      if(deflateInit2(&zs, 6, Z_DEFLATED, 15 + 16, 9, Z_DEFAULT_STRATEGY) != Z_OK)
-        return NULL;
-      break;
-    default:
-      if(deflateInit2(&zs, 6, Z_DEFLATED, 15, 8, Z_DEFAULT_STRATEGY) != Z_OK)
-        return NULL;
-      break;
-  }
-  int asiz = size + 16;
-  if(asiz < ZLIBBUFSIZ) asiz = ZLIBBUFSIZ;
-  char *buf;
-  if(!(buf = malloc(asiz))){
-    deflateEnd(&zs);
-    return NULL;
-  }
-  unsigned char obuf[ZLIBBUFSIZ];
-  int bsiz = 0;
-  zs.next_in = (unsigned char *)ptr;
-  zs.avail_in = size;
-  zs.next_out = obuf;
-  zs.avail_out = ZLIBBUFSIZ;
-  int rv;
-  while((rv = deflate(&zs, Z_FINISH)) == Z_OK){
-    int osiz = ZLIBBUFSIZ - zs.avail_out;
-    if(bsiz + osiz > asiz){
-      asiz = asiz * 2 + osiz;
-      char *swap;
-      if(!(swap = realloc(buf, asiz))){
-        free(buf);
-        deflateEnd(&zs);
-        return NULL;
-      }
-      buf = swap;
-    }
-    memcpy(buf + bsiz, obuf, osiz);
-    bsiz += osiz;
-    zs.next_out = obuf;
-    zs.avail_out = ZLIBBUFSIZ;
-  }
-  if(rv != Z_STREAM_END){
-    free(buf);
-    deflateEnd(&zs);
-    return NULL;
-  }
-  int osiz = ZLIBBUFSIZ - zs.avail_out;
-  if(bsiz + osiz + 1 > asiz){
-    asiz = asiz * 2 + osiz;
-    char *swap;
-    if(!(swap = realloc(buf, asiz))){
-      free(buf);
-      deflateEnd(&zs);
-      return NULL;
-    }
-    buf = swap;
-  }
-  memcpy(buf + bsiz, obuf, osiz);
-  bsiz += osiz;
-  buf[bsiz] = '\0';
-  if(mode == _TCZMRAW) bsiz++;
-  *sp = bsiz;
-  deflateEnd(&zs);
-  return buf;
-}
-
-
-static char *_tc_inflate_impl(const char *ptr, int size, int *sp, int mode){
-  assert(ptr && size >= 0 && sp);
-  z_stream zs;
-  zs.zalloc = Z_NULL;
-  zs.zfree = Z_NULL;
-  zs.opaque = Z_NULL;
-  switch(mode){
-    case _TCZMRAW:
-      if(inflateInit2(&zs, -15) != Z_OK) return NULL;
-      break;
-    case _TCZMGZIP:
-      if(inflateInit2(&zs, 15 + 16) != Z_OK) return NULL;
-      break;
-    default:
-      if(inflateInit2(&zs, 15) != Z_OK) return NULL;
-      break;
-  }
-  int asiz = size * 2 + 16;
-  if(asiz < ZLIBBUFSIZ) asiz = ZLIBBUFSIZ;
-  char *buf;
-  if(!(buf = malloc(asiz))){
-    inflateEnd(&zs);
-    return NULL;
-  }
-  unsigned char obuf[ZLIBBUFSIZ];
-  int bsiz = 0;
-  zs.next_in = (unsigned char *)ptr;
-  zs.avail_in = size;
-  zs.next_out = obuf;
-  zs.avail_out = ZLIBBUFSIZ;
-  int rv;
-  while((rv = inflate(&zs, Z_NO_FLUSH)) == Z_OK){
-    int osiz = ZLIBBUFSIZ - zs.avail_out;
-    if(bsiz + osiz >= asiz){
-      asiz = asiz * 2 + osiz;
-      char *swap;
-      if(!(swap = realloc(buf, asiz))){
-        free(buf);
-        inflateEnd(&zs);
-        return NULL;
-      }
-      buf = swap;
-    }
-    memcpy(buf + bsiz, obuf, osiz);
-    bsiz += osiz;
-    zs.next_out = obuf;
-    zs.avail_out = ZLIBBUFSIZ;
-  }
-  if(rv != Z_STREAM_END){
-    free(buf);
-    inflateEnd(&zs);
-    return NULL;
-  }
-  int osiz = ZLIBBUFSIZ - zs.avail_out;
-  if(bsiz + osiz >= asiz){
-    asiz = asiz * 2 + osiz;
-    char *swap;
-    if(!(swap = realloc(buf, asiz))){
-      free(buf);
-      inflateEnd(&zs);
-      return NULL;
-    }
-    buf = swap;
-  }
-  memcpy(buf + bsiz, obuf, osiz);
-  bsiz += osiz;
-  buf[bsiz] = '\0';
-  *sp = bsiz;
-  inflateEnd(&zs);
-  return buf;
-}
-
-
-static unsigned int _tc_getcrc_impl(const char *ptr, int size){
-  assert(ptr && size >= 0);
-  int crc = crc32(0, Z_NULL, 0);
-  return crc32(crc, (unsigned char *)ptr, size);
-}
-
-
-
-void tcsetvnumbuf32 (uint32_t TC_num, int* TC_len, char* TC_buf){
-    int _TC_num = TC_num;
-    if(_TC_num == 0){
-      ((signed char *)(TC_buf))[0] = 0;
-      *TC_len = 1;
-    } else {
-      *TC_len = 0;
-      while(_TC_num > 0){
-        int _TC_rem = _TC_num & 0x7f;
-        _TC_num >>= 7;
-        if(_TC_num > 0){
-          ((signed char *)(TC_buf))[*TC_len] = -_TC_rem - 1;
-        } else {
-          ((signed char *)(TC_buf))[*TC_len] = _TC_rem;
-        }
-        (*TC_len)++;
-      }
-    }
-}
-
-
-void tcsetvnumbuf64 (uint64_t TC_num, int* TC_len, char* TC_buf){
-    long long int _TC_num = TC_num;
-    if(_TC_num == 0){
-      ((signed char *)(TC_buf))[0] = 0;
-      *TC_len = 1;
-    } else {
-      *TC_len = 0;
-      while(_TC_num > 0){
-        int _TC_rem = _TC_num & 0x7f;
-        _TC_num >>= 7;
-        if(_TC_num > 0){
-          ((signed char *)(TC_buf))[*TC_len] = -_TC_rem - 1;
-        } else {
-          ((signed char *)(TC_buf))[*TC_len] = _TC_rem;
-        }
-        (*TC_len)++;
-      }
-    }
-}
-
-
-void tcreadvnumbuf32 (const char* TC_buf, int TC_step, uint32_t* TC_num){
-    *TC_num = 0;
-    int _TC_base = 1;
-    int _TC_i = 0;
-    while(true){
-      if(((signed char *)(TC_buf))[_TC_i] >= 0){
-        *TC_num += ((signed char *)(TC_buf))[_TC_i] * _TC_base;
-        break;
-      }
-      *TC_num += _TC_base * (((signed char *)(TC_buf))[_TC_i] + 1) * -1;
-      _TC_base <<= 7;
-      _TC_i++;
-    }
-    TC_step = _TC_i + 1;
-}
-
-
-void tcreadvnumbuf64 (const char* TC_buf, int TC_step, uint64_t* TC_num){
-    *TC_num = 0;
-    long long int _TC_base = 1;
-    int _TC_i = 0;
-    while(true){
-      if(((signed char *)(TC_buf))[_TC_i] >= 0){
-        *TC_num += ((signed char *)(TC_buf))[_TC_i] * _TC_base;
-        break;
-      }
-      *TC_num += _TC_base * (((signed char *)(TC_buf))[_TC_i] + 1) * -1;
-      _TC_base <<= 7;
-      _TC_i++;
-    }
-    TC_step = _TC_i + 1;
-}
 
 
 // END OF FILE

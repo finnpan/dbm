@@ -1,1 +1,1 @@
-Copied from: https://dbmx.net/
+Adpated from: https://dbmx.net/
