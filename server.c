@@ -32,7 +32,6 @@ enum {                                   // enumeration for command sequential n
   TTSEQPUT,                              // sequential number of put command
   TTSEQPUTKEEP,                          // sequential number of putkeep command
   TTSEQPUTCAT,                           // sequential number of putcat command
-  TTSEQPUTSHL,                           // sequential number of putshl command
   TTSEQPUTNR,                            // sequential number of putnr command
   TTSEQOUT,                              // sequential number of out command
   TTSEQGET,                              // sequential number of get command
@@ -134,7 +133,6 @@ static uint64_t sumstat(TASKARG *arg, int seq);
 static void do_put(TTSOCK *sock, TASKARG *arg, TTREQ *req);
 static void do_putkeep(TTSOCK *sock, TASKARG *arg, TTREQ *req);
 static void do_putcat(TTSOCK *sock, TASKARG *arg, TTREQ *req);
-static void do_putshl(TTSOCK *sock, TASKARG *arg, TTREQ *req);
 static void do_putnr(TTSOCK *sock, TASKARG *arg, TTREQ *req);
 static void do_out(TTSOCK *sock, TASKARG *arg, TTREQ *req);
 static void do_get(TTSOCK *sock, TASKARG *arg, TTREQ *req);
@@ -304,8 +302,6 @@ static uint64_t getcmdmask(const char *expr){
       mask |= 1ULL << TTSEQPUTKEEP;
     } else if(!tcstricmp(name, "putcat")){
       mask |= 1ULL << TTSEQPUTCAT;
-    } else if(!tcstricmp(name, "putshl")){
-      mask |= 1ULL << TTSEQPUTSHL;
     } else if(!tcstricmp(name, "putnr")){
       mask |= 1ULL << TTSEQPUTNR;
     } else if(!tcstricmp(name, "out")){
@@ -729,9 +725,6 @@ static void do_task(TTSOCK *sock, void *opq, TTREQ *req){
       case TTCMDPUTCAT:
         do_putcat(sock, arg, req);
         break;
-      case TTCMDPUTSHL:
-        do_putshl(sock, arg, req);
-        break;
       case TTCMDPUTNR:
         do_putnr(sock, arg, req);
         break;
@@ -1017,48 +1010,6 @@ static void do_putcat(TTSOCK *sock, TASKARG *arg, TTREQ *req){
     }
   } else {
     ttservlog(g_serv, TTLOGINFO, "do_putcat: invalid entity");
-  }
-  pthread_cleanup_pop(1);
-}
-
-
-/* handle the putshl command */
-static void do_putshl(TTSOCK *sock, TASKARG *arg, TTREQ *req){
-  ttservlog(g_serv, TTLOGDEBUG, "doing putshl command");
-  arg->counts[TTSEQNUM*req->idx+TTSEQPUTSHL]++;
-  uint64_t mask = arg->mask;
-  TCMDB *mdb = arg->mdb;
-  TCULOG *ulog = arg->ulog;
-  uint32_t sid = arg->sid;
-  int ksiz = ttsockgetint32(sock);
-  int vsiz = ttsockgetint32(sock);
-  int width = ttsockgetint32(sock);
-  if(ttsockcheckend(sock) || ksiz < 0 || ksiz > MAXARGSIZ || vsiz < 0 || vsiz > MAXARGSIZ ||
-     width < 0){
-    ttservlog(g_serv, TTLOGINFO, "do_putshl: invalid parameters");
-    return;
-  }
-  int rsiz = ksiz + vsiz;
-  char stack[TTIOBUFSIZ];
-  char *buf = (rsiz < TTIOBUFSIZ) ? stack : tcmalloc(rsiz + 1);
-  pthread_cleanup_push(free, (buf == stack) ? NULL : buf);
-  if(ttsockrecv(sock, buf, rsiz) && !ttsockcheckend(sock)){
-    uint8_t code = 0;
-    if(mask & ((1ULL << TTSEQPUTSHL) | (1ULL << TTSEQALLORG) | (1ULL << TTSEQALLWRITE))){
-      code = 1;
-      ttservlog(g_serv, TTLOGINFO, "do_putshl: forbidden");
-    } else if(!tculogdbputshl(ulog, sid, 0, mdb, buf, ksiz, buf + ksiz, vsiz, width)){
-      arg->counts[TTSEQNUM*req->idx+TTSEQPUTMISS]++;
-      code = 1;
-      ttservlog(g_serv, TTLOGERROR, "do_putshl: operation failed");
-    }
-    if(ttsocksend(sock, &code, sizeof(code))){
-      req->keep = true;
-    } else {
-      ttservlog(g_serv, TTLOGINFO, "do_putshl: response failed");
-    }
-  } else {
-    ttservlog(g_serv, TTLOGINFO, "do_putshl: invalid entity");
   }
   pthread_cleanup_pop(1);
 }
@@ -1751,7 +1702,6 @@ static void do_stat(TTSOCK *sock, TASKARG *arg, TTREQ *req){
   wp += sprintf(wp, "cnt_put\t%llu\n", (unsigned long long)sumstat(arg, TTSEQPUT));
   wp += sprintf(wp, "cnt_putkeep\t%llu\n", (unsigned long long)sumstat(arg, TTSEQPUTKEEP));
   wp += sprintf(wp, "cnt_putcat\t%llu\n", (unsigned long long)sumstat(arg, TTSEQPUTCAT));
-  wp += sprintf(wp, "cnt_putshl\t%llu\n", (unsigned long long)sumstat(arg, TTSEQPUTSHL));
   wp += sprintf(wp, "cnt_putnr\t%llu\n", (unsigned long long)sumstat(arg, TTSEQPUTNR));
   wp += sprintf(wp, "cnt_out\t%llu\n", (unsigned long long)sumstat(arg, TTSEQOUT));
   wp += sprintf(wp, "cnt_get\t%llu\n", (unsigned long long)sumstat(arg, TTSEQGET));
@@ -2432,7 +2382,7 @@ static void do_mc_stats(TTSOCK *sock, TASKARG *arg, TTREQ *req, char **tokens, i
                     (int)ubuf.ru_stime.tv_sec, (int)ubuf.ru_stime.tv_usec);
     }
     uint64_t putsum = sumstat(arg, TTSEQPUT) + sumstat(arg, TTSEQPUTKEEP) +
-      sumstat(arg, TTSEQPUTCAT) + sumstat(arg, TTSEQPUTSHL) + sumstat(arg, TTSEQPUTNR);
+      sumstat(arg, TTSEQPUTCAT) + sumstat(arg, TTSEQPUTNR);
     uint64_t putmiss = sumstat(arg, TTSEQPUTMISS);
     wp += sprintf(wp, "STAT cmd_set %llu\r\n", (unsigned long long)putsum);
     wp += sprintf(wp, "STAT cmd_set_hits %llu\r\n", (unsigned long long)(putsum - putmiss));

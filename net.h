@@ -250,7 +250,6 @@ double ttunpackdouble(const char *buf);
 #define TTCMDPUT       0x10              /* ID of put command */
 #define TTCMDPUTKEEP   0x11              /* ID of putkeep command */
 #define TTCMDPUTCAT    0x12              /* ID of putcat command */
-#define TTCMDPUTSHL    0x13              /* ID of putshl command */
 #define TTCMDPUTNR     0x18              /* ID of putnr command */
 #define TTCMDOUT       0x20              /* ID of out command */
 #define TTCMDGET       0x30              /* ID of get command */
@@ -641,22 +640,6 @@ bool tculogdbputcat(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                      const void *kbuf, int ksiz, const void *vbuf, int vsiz);
 
 
-/* Concatenate a value at the end of the existing record and shift it to the left.
-   `ulog' specifies the update log object.
-   `sid' specifies the origin server ID of the message.
-   `mid' specifies the master server ID of the message.
-   `mdb' specifies the database object.
-   `kbuf' specifies the pointer to the region of the key.
-   `ksiz' specifies the size of the region of the key.
-   `vbuf' specifies the pointer to the region of the value.
-   `vsiz' specifies the size of the region of the value.
-   `width' specifies the width of the record.
-   If successful, the return value is true, else, it is false.
-   If there is no corresponding record, a new record is created. */
-bool tculogdbputshl(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
-                     const void *kbuf, int ksiz, const void *vbuf, int vsiz, int width);
-
-
 /* Remove a record of a database object.
    `ulog' specifies the update log object.
    `sid' specifies the origin server ID of the message.
@@ -925,18 +908,6 @@ bool tcrdbputkeep(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int 
    If successful, the return value is true, else, it is false.
    If there is no corresponding record, a new record is created. */
 bool tcrdbputcat(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int vsiz);
-
-
-/* Concatenate a value at the end of the existing record and shift it to the left.
-   `rdb' specifies the remote database object.
-   `kbuf' specifies the pointer to the region of the key.
-   `ksiz' specifies the size of the region of the key.
-   `vbuf' specifies the pointer to the region of the value.
-   `vsiz' specifies the size of the region of the value.
-   `width' specifies the width of the record.
-   If successful, the return value is true, else, it is false.
-   If there is no corresponding record, a new record is created. */
-bool tcrdbputshl(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int vsiz, int width);
 
 
 /* Store a record into a remote database object without response from the server.

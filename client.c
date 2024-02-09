@@ -51,7 +51,7 @@ static int runhttp(int argc, char **argv);
 static int runversion(int argc, char **argv);
 static int procinform(const char *host, int port, bool st);
 static int procput(const char *host, int port, const char *kbuf, int ksiz,
-                   const char *vbuf, int vsiz, int dmode, int shlw);
+                   const char *vbuf, int vsiz, int dmode);
 static int procout(const char *host, int port, const char *kbuf, int ksiz);
 static int procget(const char *host, int port, const char *kbuf, int ksiz, int sep,
                    bool px, bool pz);
@@ -277,7 +277,6 @@ static int runput(int argc, char **argv){
   char *value = NULL;
   int port = TTDEFPORT;
   int dmode = 0;
-  int shlw = -1;
   bool sx = false;
   int sep = -1;
   for(int i = 2; i < argc; i++){
@@ -293,9 +292,6 @@ static int runput(int argc, char **argv){
         dmode = 10;
       } else if(!strcmp(argv[i], "-dad")){
         dmode = 11;
-      } else if(!strcmp(argv[i], "-ds")){
-        if(++i >= argc) usage();
-        shlw = tcatoi(argv[i]);
       } else if(!strcmp(argv[i], "-sx")){
         sx = true;
       } else if(!strcmp(argv[i], "-sep")){
@@ -329,7 +325,7 @@ static int runput(int argc, char **argv){
     vsiz = strlen(value);
     vbuf = tcmemdup(value, vsiz);
   }
-  int rv = procput(host, port, kbuf, ksiz, vbuf, vsiz, dmode, shlw);
+  int rv = procput(host, port, kbuf, ksiz, vbuf, vsiz, dmode);
   free(vbuf);
   free(kbuf);
   return rv;
@@ -828,7 +824,7 @@ static int procinform(const char *host, int port, bool st){
 
 /* perform put command */
 static int procput(const char *host, int port, const char *kbuf, int ksiz,
-                   const char *vbuf, int vsiz, int dmode, int shlw){
+                   const char *vbuf, int vsiz, int dmode){
   TCRDB *rdb = tcrdbnew();
   if(!myopen(rdb, host, port)){
     printerr(rdb);
@@ -870,16 +866,9 @@ static int procput(const char *host, int port, const char *kbuf, int ksiz,
       }
       break;
     default:
-      if(shlw >= 0){
-        if(!tcrdbputshl(rdb, kbuf, ksiz, vbuf, vsiz, shlw)){
-          printerr(rdb);
-          err = true;
-        }
-      } else {
-        if(!tcrdbput(rdb, kbuf, ksiz, vbuf, vsiz)){
-          printerr(rdb);
-          err = true;
-        }
+      if(!tcrdbput(rdb, kbuf, ksiz, vbuf, vsiz)){
+        printerr(rdb);
+        err = true;
       }
       break;
   }

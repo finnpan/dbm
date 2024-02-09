@@ -1455,7 +1455,6 @@ const char *ttcmdidtostr(int id){
     case TTCMDPUT: return "put";
     case TTCMDPUTKEEP: return "putkeep";
     case TTCMDPUTCAT: return "putcat";
-    case TTCMDPUTSHL: return "putshl";
     case TTCMDPUTNR: return "putnr";
     case TTCMDOUT: return "out";
     case TTCMDGET: return "get";
@@ -1484,16 +1483,9 @@ const char *ttcmdidtostr(int id){
 #define TCULTMDEVALW   30.0              // allowed time deviance
 #define TCREPLTIMEO    60.0              // timeout of the replication socket
 
-typedef struct {                         // type of structure for a putshl operand
-  const char *vbuf;                      // region of the value.
-  int vsiz;                              // size of the region
-  int width;                             // the width of the record
-} PUTSHLOP;
-
 
 /* private function prototypes */
 static bool tculogflushaiocbp(struct aiocb *aiocbp);
-static void *tculogdbputshlproc(const void *vbuf, int vsiz, int *sp, PUTSHLOP *op);
 
 
 
@@ -2041,49 +2033,6 @@ bool tculogdbputcat(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
 }
 
 
-/* Concatenate a value at the end of the existing record and shift it to the left. */
-bool tculogdbputshl(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
-                     const void *kbuf, int ksiz, const void *vbuf, int vsiz, int width){
-  assert(ulog && mdb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0 && width >= 0);
-  bool err = false;
-  int rmidx = tculogrmtxidx(ulog, kbuf, ksiz);
-  bool dolog = tculogbegin(ulog, rmidx);
-  PUTSHLOP op;
-  op.vbuf = vbuf;
-  op.vsiz = vsiz;
-  op.width = width;
-  if(!tcmdbputproc(mdb, kbuf, ksiz, vbuf, vsiz, (TCPDPROC)tculogdbputshlproc, &op))
-    err = true;
-  if(dolog){
-    unsigned char mstack[TTIOBUFSIZ];
-    int msiz = sizeof(uint8_t) * 3 + sizeof(uint32_t) * 3 + ksiz + vsiz;
-    unsigned char *mbuf = (msiz < TTIOBUFSIZ) ? mstack : tcmalloc(msiz + 1);
-    unsigned char *wp = mbuf;
-    *(wp++) = TTMAGICNUM;
-    *(wp++) = TTCMDPUTSHL;
-    uint32_t lnum;
-    lnum = htonl(ksiz);
-    memcpy(wp, &lnum, sizeof(lnum));
-    wp += sizeof(lnum);
-    lnum = htonl(vsiz);
-    memcpy(wp, &lnum, sizeof(lnum));
-    wp += sizeof(lnum);
-    lnum = htonl(width);
-    memcpy(wp, &lnum, sizeof(lnum));
-    wp += sizeof(lnum);
-    memcpy(wp, kbuf, ksiz);
-    wp += ksiz;
-    memcpy(wp, vbuf, vsiz);
-    wp += vsiz;
-    *(wp++) = err ? 1 : 0;
-    if(!tculogwrite(ulog, 0, sid, mid, mbuf, msiz)) err = true;
-    if(mbuf != mstack) free(mbuf);
-    tculogend(ulog, rmidx);
-  }
-  return !err;
-}
-
-
 /* Remove a record of a database object. */
 bool tculogdbout(TCULOG *ulog, uint32_t sid, uint32_t mid, TCMDB *mdb,
                   const void *kbuf, int ksiz){
@@ -2337,26 +2286,6 @@ bool tculogdbredo(TCMDB *mdb, const char *ptr, int size, TCULOG *ulog,
         err = true;
       }
       break;
-    case TTCMDPUTSHL:
-      if(size >= sizeof(uint32_t) * 3){
-        uint32_t ksiz;
-        memcpy(&ksiz, rp, sizeof(ksiz));
-        ksiz = ntohl(ksiz);
-        rp += sizeof(ksiz);
-        uint32_t vsiz;
-        memcpy(&vsiz, rp, sizeof(vsiz));
-        vsiz = ntohl(vsiz);
-        rp += sizeof(vsiz);
-        uint32_t width;
-        memcpy(&width, rp, sizeof(width));
-        width = ntohl(width);
-        rp += sizeof(width);
-        if(tculogdbputshl(ulog, sid, mid, mdb, rp, ksiz, rp + ksiz, vsiz, width) != exp)
-          *cp = false;
-      } else {
-        err = true;
-      }
-      break;
     case TTCMDOUT:
       if(size >= sizeof(uint32_t)){
         uint32_t ksiz;
@@ -2575,33 +2504,6 @@ static bool tculogflushaiocbp(struct aiocb *aiocbp){
 }
 
 
-/* Call back function for the putshl function.
-   `vbuf' specifies the pointer to the region of the value.
-   `vsiz' specifies the size of the region of the value.
-   `sp' specifies the pointer to the variable into which the size of the region of the return
-   value is assigned.
-   `op' specifies the pointer to the optional opaque object.
-   The return value is the pointer to the result object. */
-static void *tculogdbputshlproc(const void *vbuf, int vsiz, int *sp, PUTSHLOP *op){
-  assert(vbuf && vsiz >= 0 && sp && op);
-  int rsiz = tclmin(vsiz + op->vsiz, op->width);
-  char *rbuf = tcmalloc(rsiz + 1);
-  char *wp = rbuf;
-  int wsiz = rsiz;
-
-  int left = wsiz - op->vsiz;
-  if(left > 0){
-    memcpy(wp, (char *)vbuf + vsiz - left, left);
-    wp += left;
-    wsiz -= left;
-  }
-  if(wsiz > 0) memcpy(wp, op->vbuf + op->vsiz - wsiz, wsiz);
-  *sp = rsiz;
-  return rbuf;
-}
-
-
-
 #define RDBRECONWAIT   0.1               // wait time to reconnect
 #define RDBNUMCOLMAX   16                // maximum number of columns of the long double
 
@@ -2624,8 +2526,6 @@ static bool tcrdbcloseimpl(TCRDB *rdb);
 static bool tcrdbputimpl(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int vsiz);
 static bool tcrdbputkeepimpl(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int vsiz);
 static bool tcrdbputcatimpl(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int vsiz);
-static bool tcrdbputshlimpl(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int vsiz,
-                            int width);
 static bool tcrdbputnrimpl(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int vsiz);
 static bool tcrdboutimpl(TCRDB *rdb, const void *kbuf, int ksiz);
 static void *tcrdbgetimpl(TCRDB *rdb, const void *kbuf, int ksiz, int *sp);
@@ -2806,18 +2706,6 @@ bool tcrdbputcat(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int v
   bool rv;
   pthread_cleanup_push((void (*)(void *))tcrdbunlockmethod, rdb);
   rv = tcrdbputcatimpl(rdb, kbuf, ksiz, vbuf, vsiz);
-  pthread_cleanup_pop(1);
-  return rv;
-}
-
-
-/* Concatenate a value at the end of the existing record and shift it to the left. */
-bool tcrdbputshl(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int vsiz, int width){
-  assert(rdb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0 && width >= 0);
-  if(!tcrdblockmethod(rdb)) return false;
-  bool rv;
-  pthread_cleanup_push((void (*)(void *))tcrdbunlockmethod, rdb);
-  rv = tcrdbputshlimpl(rdb, kbuf, ksiz, vbuf, vsiz, width);
   pthread_cleanup_pop(1);
   return rv;
 }
@@ -3088,7 +2976,7 @@ void tcrdbsetecode(TCRDB *rdb, int ecode){
 static bool tcrdblockmethod(TCRDB *rdb){
   assert(rdb);
   if(pthread_mutex_lock(&rdb->mmtx) != 0){
-    tcrdbsetecode(rdb, TCEMISC);
+    tcrdbsetecode(rdb, TTEMISC);
     return false;
   }
   return true;
@@ -3099,7 +2987,7 @@ static bool tcrdblockmethod(TCRDB *rdb){
    `rdb' specifies the remote database object. */
 static void tcrdbunlockmethod(TCRDB *rdb){
   assert(rdb);
-  if(pthread_mutex_unlock(&rdb->mmtx) != 0) tcrdbsetecode(rdb, TCEMISC);
+  if(pthread_mutex_unlock(&rdb->mmtx) != 0) tcrdbsetecode(rdb, TTEMISC);
 }
 
 
@@ -3369,60 +3257,6 @@ static bool tcrdbputcatimpl(TCRDB *rdb, const void *kbuf, int ksiz, const void *
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   num = htonl((uint32_t)vsiz);
-  memcpy(wp, &num, sizeof(uint32_t));
-  wp += sizeof(uint32_t);
-  memcpy(wp, kbuf, ksiz);
-  wp += ksiz;
-  memcpy(wp, vbuf, vsiz);
-  wp += vsiz;
-  if(tcrdbsend(rdb, buf, wp - buf)){
-    int code = ttsockgetc(rdb->sock);
-    if(code != 0){
-      tcrdbsetecode(rdb, code == -1 ? TTERECV : TTEMISC);
-      err = true;
-    }
-  } else {
-    err = true;
-  }
-  pthread_cleanup_pop(1);
-  return !err;
-}
-
-
-/* Concatenate a value at the end of the existing record and shift it to the left.
-   `rdb' specifies the remote database object.
-   `kbuf' specifies the pointer to the region of the key.
-   `ksiz' specifies the size of the region of the key.
-   `vbuf' specifies the pointer to the region of the value.
-   `vsiz' specifies the size of the region of the value.
-   `width' specifies the width of the record.
-   If successful, the return value is true, else, it is false. */
-static bool tcrdbputshlimpl(TCRDB *rdb, const void *kbuf, int ksiz, const void *vbuf, int vsiz,
-                            int width){
-  assert(rdb && kbuf && ksiz >= 0 && vbuf && vsiz >= 0 && width >= 0);
-  if(rdb->fd < 0){
-    if(!rdb->host || !(rdb->opts & RDBTRECON)){
-      tcrdbsetecode(rdb, TTEINVALID);
-      return false;
-    }
-    if(!tcrdbreconnect(rdb)) return false;
-  }
-  bool err = false;
-  int rsiz = 2 + sizeof(uint32_t) * 3 + ksiz + vsiz;
-  unsigned char stack[TTIOBUFSIZ];
-  unsigned char *buf = (rsiz < TTIOBUFSIZ) ? stack : tcmalloc(rsiz);
-  pthread_cleanup_push(free, (buf == stack) ? NULL : buf);
-  unsigned char *wp = buf;
-  *(wp++) = TTMAGICNUM;
-  *(wp++) = TTCMDPUTSHL;
-  uint32_t num;
-  num = htonl((uint32_t)ksiz);
-  memcpy(wp, &num, sizeof(uint32_t));
-  wp += sizeof(uint32_t);
-  num = htonl((uint32_t)vsiz);
-  memcpy(wp, &num, sizeof(uint32_t));
-  wp += sizeof(uint32_t);
-  num = htonl((uint32_t)width);
   memcpy(wp, &num, sizeof(uint32_t));
   wp += sizeof(uint32_t);
   memcpy(wp, kbuf, ksiz);
