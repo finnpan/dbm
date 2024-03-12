@@ -238,17 +238,6 @@ void *tcmemdup(const void *ptr, size_t size);
 char *tcstrdup(const void *str);
 
 
-/* type of the pointer to a comparison function.
-   `aptr' specifies the pointer to the region of one key.
-   `asiz' specifies the size of the region of one key.
-   `bptr' specifies the pointer to the region of the other key.
-   `bsiz' specifies the size of the region of the other key.
-   `op' specifies the pointer to the optional opaque object.
-   The return value is positive if the former is big, negative if the latter is big, 0 if both
-   are equivalent. */
-typedef int (*TCCMP)(const char *aptr, int asiz, const char *bptr, int bsiz, void *op);
-
-
 /*************************************************************************************************
  * extensible string
  *************************************************************************************************/
@@ -397,6 +386,7 @@ int tclistnum(const TCLIST *list);
    Because an additional zero code is appended at the end of the region of the return value,
    the return value can be treated as a character string.  If `index' is equal to or more than
    the number of elements, the return value is `NULL'. */
+const void *tclistval0(const TCLIST *list, int index);
 const void *tclistval(const TCLIST *list, int index, int *sp);
 
 
@@ -451,20 +441,6 @@ void tclistclear(TCLIST *list);
    `size' specifies the size of the region.
    Note that the specified region is released when the object is deleted. */
 void tclistpushmalloc(TCLIST *list, void *ptr, int size);
-
-
-/* Alias of `tclistval' but not checking size. */
-#define TCLISTVAL(TC_ptr, TC_list, TC_index, TC_size) \
-  do { \
-    (TC_ptr) = (TC_list)->array[(TC_index)+(TC_list)->start].ptr; \
-    (TC_size) = (TC_list)->array[(TC_index)+(TC_list)->start].size; \
-  } while(false)
-
-
-/* Alias of `tclistval' but not checking size and not using the third parameter. */
-#define TCLISTVALPTR(TC_list, TC_index) \
-  ((void *)((TC_list)->array[(TC_index)+(TC_list)->start].ptr))
-
 
 
 /*************************************************************************************************
@@ -538,15 +514,6 @@ void tcmapput2(TCMAP *map, const char *kstr, const char *vstr);
 bool tcmapputkeep(TCMAP *map, const void *kbuf, int ksiz, const void *vbuf, int vsiz);
 
 
-/* Store a new string record into a map object.
-   `map' specifies the map object.
-   `kstr' specifies the string of the key.
-   `vstr' specifies the string of the value.
-   If successful, the return value is true, else, it is false.
-   If a record with the same key exists in the map, this function has no effect. */
-bool tcmapputkeep2(TCMAP *map, const char *kstr, const char *vstr);
-
-
 /* Concatenate a value at the end of the value of the existing record in a map object.
    `map' specifies the map object.
    `kbuf' specifies the pointer to the region of the key.
@@ -593,16 +560,6 @@ const void *tcmapget(const TCMAP *map, const void *kbuf, int ksiz, int *sp);
    If successful, the return value is the string of the value of the corresponding record.
    `NULL' is returned when no record corresponds. */
 const char *tcmapget2(const TCMAP *map, const char *kstr);
-
-
-/* Move a record to the edge of a map object.
-   `map' specifies the map object.
-   `kbuf' specifies the pointer to the region of a key.
-   `ksiz' specifies the size of the region of the key.
-   `head' specifies the destination which is the head if it is true or the tail if else.
-   If successful, the return value is true.  False is returned when no record corresponds to
-   the specified key. */
-bool tcmapmove(TCMAP *map, const void *kbuf, int ksiz, bool head);
 
 
 /* Initialize the iterator of a map object.
@@ -691,11 +648,6 @@ void tcmapclear(TCMAP *map);
    `map' specifies the map object.
    `num' specifies the number of records to be removed. */
 void tcmapcutfront(TCMAP *map, int num);
-
-
-/*************************************************************************************************
- * hash map (for experts)
- *************************************************************************************************/
 
 
 /* Initialize the iterator of a map object at the record corresponding a key.
@@ -935,59 +887,6 @@ void tcmdbiterinit2(TCMDB *mdb, const void *kbuf, int ksiz);
 
 
 /*************************************************************************************************
- * memory pool
- *************************************************************************************************/
-
-
-typedef struct {                         /* type of an element of memory pool */
-  void *ptr;                             /* pointer */
-  void (*del)(void *);                   /* deleting function */
-} TCMPELEM;
-
-typedef struct {                         /* type of structure for a memory pool object */
-  void *mutex;                           /* mutex for operations */
-  TCMPELEM *elems;                       /* array of elements */
-  int anum;                              /* number of the elements of the array */
-  int num;                               /* number of used elements */
-} TCMPOOL;
-
-
-/* Create a memory pool object.
-   The return value is the new memory pool object. */
-TCMPOOL *tcmpoolnew(void);
-
-
-/* Delete a memory pool object.
-   `mpool' specifies the memory pool object.
-   Note that the deleted object and its derivatives can not be used anymore. */
-void tcmpooldel(TCMPOOL *mpool);
-
-
-/* Relegate an arbitrary object to a memory pool object.
-   `mpool' specifies the memory pool object.
-   `ptr' specifies the pointer to the object to be relegated.  If it is `NULL', this function has
-   no effect.
-   `del' specifies the pointer to the function to delete the object.
-   The return value is the pointer to the given object.
-   This function assures that the specified object is deleted when the memory pool object is
-   deleted. */
-void *tcmpoolpush(TCMPOOL *mpool, void *ptr, void (*del)(void *));
-
-
-/* Create a list object relegated to a memory pool object.
-   The return value is the new list object under the memory pool. */
-TCLIST *tcmpoollistnew(TCMPOOL *mpool);
-
-
-/* Get the global memory pool object.
-   The return value is the global memory pool object.
-   The global memory pool object is a singleton and assured to be deleted when the porcess is
-   terminating normally. */
-TCMPOOL *tcmpoolglobal(void);
-
-
-
-/*************************************************************************************************
  * miscellaneous utilities
  *************************************************************************************************/
 
@@ -1107,11 +1006,6 @@ void tcdatestrwww(int64_t t, int jl, char *buf);
 /* Get the jet lag of the local time.
    The return value is the jet lag of the local time in seconds. */
 int tcjetlag(void);
-
-
-/*************************************************************************************************
- * miscellaneous utilities (for experts)
- *************************************************************************************************/
 
 
 /* Convert a hexadecimal string to an integer.
@@ -1329,11 +1223,6 @@ char *tchexdecode(const char *str, int *sp);
 void tcwwwformdecode2(const void *ptr, int size, const char *type, TCMAP *params);
 
 
-/*************************************************************************************************
- * features for experts
- *************************************************************************************************/
-
-
 /* Show error message on the standard error output and exit.
    `message' specifies an error message.
    This function does not return. */
@@ -1364,16 +1253,16 @@ int tcnumtostrbin(uint64_t num, char *buf, int col, int fc);
 
 
 
-/* Get the alignment of a variable type. */
-#define TCALIGNOF(TC_a) \
-  ((int)offsetof(struct { int8_t TC_top; TC_a TC_bot; }, TC_bot))
-
-
 /* Get the size of padding bytes for pointer alignment. */
-typedef union { int32_t i; int64_t l; double d; void *p; TCCMP f; } tcgeneric_t;
-#define TCALIGNPAD(TC_hsiz) \
-  (((TC_hsiz | ~-TCALIGNOF(tcgeneric_t)) + 1) - TC_hsiz)
-
+typedef int (*TCFUNCPOINTER_FOO)(const char *aptr, int asiz, const char *bptr, int bsiz, void *op);
+typedef union { int32_t i; int64_t l; double d; void *p; TCFUNCPOINTER_FOO f; } TCUNION_FOO;
+#define TCALIGNBYTES ((int)offsetof(struct { int8_t TC_top; TCUNION_FOO TC_bot; }, TC_bot))
+#if 0
+/* 8 is got when TC_hsiz is multiples of 8! */
+#define TCALIGNPAD(TC_hsiz) (((TC_hsiz | ~-TCALIGNBYTES) + 1) - TC_hsiz)
+#else
+#define TCALIGNPAD(TC_a) (((TC_a + TCALIGNBYTES - 1) & (~(TCALIGNBYTES - 1))) - TC_a)
+#endif
 
 
 __UTIL_CLINKAGEEND

@@ -355,13 +355,16 @@ int tclistnum(const TCLIST *list){
 }
 
 
+const void *tclistval0(const TCLIST *list, int index){
+  return list->array[index+list->start].ptr;
+}
+
 /* Get the pointer to the region of an element of a list object. */
 const void *tclistval(const TCLIST *list, int index, int *sp){
   assert(list && index >= 0 && sp);
   if(index >= list->num) return NULL;
-  index += list->start;
-  *sp = list->array[index].size;
-  return list->array[index].ptr;
+  *sp = list->array[index+list->start].size;
+  return tclistval0(list, index);
 }
 
 
@@ -677,13 +680,6 @@ bool tcmapputkeep(TCMAP *map, const void *kbuf, int ksiz, const void *vbuf, int 
 }
 
 
-/* Store a new string record into a map object. */
-bool tcmapputkeep2(TCMAP *map, const char *kstr, const char *vstr){
-  assert(map && kstr && vstr);
-  return tcmapputkeep(map, kstr, strlen(kstr), vstr, strlen(vstr));
-}
-
-
 /* Concatenate a value at the end of the value of the existing record in a map object. */
 void tcmapputcat(TCMAP *map, const void *kbuf, int ksiz, const void *vbuf, int vsiz){
   assert(map && kbuf && ksiz >= 0 && vbuf && vsiz >= 0);
@@ -831,72 +827,6 @@ bool tcmapout2(TCMAP *map, const char *kstr){
 
 /* Retrieve a record in a map object. */
 const void *tcmapget(const TCMAP *map, const void *kbuf, int ksiz, int *sp){
-  assert(map && kbuf && ksiz >= 0 && sp);
-  if(ksiz > TCMAPKMAXSIZ) ksiz = TCMAPKMAXSIZ;
-  uint32_t hash;
-  TCMAPHASH1(hash, kbuf, ksiz);
-  TCMAPREC *rec = map->buckets[hash%map->bnum];
-  TCMAPHASH2(hash, kbuf, ksiz);
-  hash &= ~TCMAPKMAXSIZ;
-  while(rec){
-    uint32_t rhash = rec->ksiz & ~TCMAPKMAXSIZ;
-    uint32_t rksiz = rec->ksiz & TCMAPKMAXSIZ;
-    if(hash > rhash){
-      rec = rec->left;
-    } else if(hash < rhash){
-      rec = rec->right;
-    } else {
-      char *dbuf = (char *)rec + sizeof(*rec);
-      int kcmp = TCKEYCMP(kbuf, ksiz, dbuf, rksiz);
-      if(kcmp < 0){
-        rec = rec->left;
-      } else if(kcmp > 0){
-        rec = rec->right;
-      } else {
-        *sp = rec->vsiz;
-        return dbuf + rksiz + TCALIGNPAD(rksiz);
-      }
-    }
-  }
-  return NULL;
-}
-
-
-/* Retrieve a string record in a map object. */
-const char *tcmapget2(const TCMAP *map, const char *kstr){
-  assert(map && kstr);
-  int ksiz = strlen(kstr);
-  if(ksiz > TCMAPKMAXSIZ) ksiz = TCMAPKMAXSIZ;
-  uint32_t hash;
-  TCMAPHASH1(hash, kstr, ksiz);
-  TCMAPREC *rec = map->buckets[hash%map->bnum];
-  TCMAPHASH2(hash, kstr, ksiz);
-  hash &= ~TCMAPKMAXSIZ;
-  while(rec){
-    uint32_t rhash = rec->ksiz & ~TCMAPKMAXSIZ;
-    uint32_t rksiz = rec->ksiz & TCMAPKMAXSIZ;
-    if(hash > rhash){
-      rec = rec->left;
-    } else if(hash < rhash){
-      rec = rec->right;
-    } else {
-      char *dbuf = (char *)rec + sizeof(*rec);
-      int kcmp = TCKEYCMP(kstr, ksiz, dbuf, rksiz);
-      if(kcmp < 0){
-        rec = rec->left;
-      } else if(kcmp > 0){
-        rec = rec->right;
-      } else {
-        return dbuf + rksiz + TCALIGNPAD(rksiz);
-      }
-    }
-  }
-  return NULL;
-}
-
-
-/* Move a record to the edge of a map object. */
-bool tcmapmove(TCMAP *map, const void *kbuf, int ksiz, bool head){
   assert(map && kbuf && ksiz >= 0);
   if(ksiz > TCMAPKMAXSIZ) ksiz = TCMAPKMAXSIZ;
   uint32_t hash;
@@ -919,30 +849,22 @@ bool tcmapmove(TCMAP *map, const void *kbuf, int ksiz, bool head){
       } else if(kcmp > 0){
         rec = rec->right;
       } else {
-        if(head){
-          if(map->first == rec) return true;
-          if(map->last == rec) map->last = rec->prev;
-          if(rec->prev) rec->prev->next = rec->next;
-          if(rec->next) rec->next->prev = rec->prev;
-          rec->prev = NULL;
-          rec->next = map->first;
-          map->first->prev = rec;
-          map->first = rec;
-        } else {
-          if(map->last == rec) return true;
-          if(map->first == rec) map->first = rec->next;
-          if(rec->prev) rec->prev->next = rec->next;
-          if(rec->next) rec->next->prev = rec->prev;
-          rec->prev = map->last;
-          rec->next = NULL;
-          map->last->next = rec;
-          map->last = rec;
+        if (sp) {
+          *sp = rec->vsiz;
         }
-        return true;
+        return dbuf + rksiz + TCALIGNPAD(rksiz);
       }
     }
   }
-  return false;
+  return NULL;
+}
+
+
+/* Retrieve a string record in a map object. */
+const char *tcmapget2(const TCMAP *map, const char *kstr){
+  assert(map && kstr);
+  int ksiz = strlen(kstr);
+  return tcmapget(map, kstr, ksiz, NULL);
 }
 
 
@@ -986,7 +908,7 @@ uint64_t tcmaprnum(const TCMAP *map){
 /* Get the total size of memory used in a map object. */
 uint64_t tcmapmsiz(const TCMAP *map){
   assert(map);
-  return map->msiz + map->rnum * (sizeof(*map->first) + sizeof(tcgeneric_t)) +
+  return map->msiz + map->rnum * (sizeof(*map->first) + sizeof(TCUNION_FOO)) +
     map->bnum * sizeof(void *);
 }
 
@@ -1171,11 +1093,6 @@ void tcmapcutfront(TCMAP *map, int num){
 }
 
 
-/*************************************************************************************************
- * hash map (for experts)
- *************************************************************************************************/
-
-
 /* Initialize the iterator of a map object at the record corresponding a key. */
 void tcmapiterinit2(TCMAP *map, const void *kbuf, int ksiz){
   assert(map && kbuf && ksiz >= 0);
@@ -1210,10 +1127,12 @@ void tcmapiterinit2(TCMAP *map, const void *kbuf, int ksiz){
 
 /* Get the value bound to the key fetched from the iterator of a map object. */
 const void *tcmapiterval(const void *kbuf, int *sp){
-  assert(kbuf && sp);
+  assert(kbuf);
   TCMAPREC *rec = (TCMAPREC *)((char *)kbuf - sizeof(*rec));
   uint32_t rksiz = rec->ksiz & TCMAPKMAXSIZ;
-  *sp = rec->vsiz;
+  if (sp) {
+    *sp = rec->vsiz;
+  }
   return (char *)kbuf + rksiz + TCALIGNPAD(rksiz);
 }
 
@@ -1221,9 +1140,7 @@ const void *tcmapiterval(const void *kbuf, int *sp){
 /* Get the value string bound to the key fetched from the iterator of a map object. */
 const char *tcmapiterval2(const char *kstr){
   assert(kstr);
-  TCMAPREC *rec = (TCMAPREC *)(kstr - sizeof(*rec));
-  uint32_t rksiz = rec->ksiz & TCMAPKMAXSIZ;
-  return kstr + rksiz + TCALIGNPAD(rksiz);
+  return tcmapiterval(kstr, NULL);
 }
 
 
@@ -1277,10 +1194,10 @@ TCLIST *tcmdbmisc(TCMDB *mdb, const char *name, const TCLIST *args){
       rv = tclistnew2(1);
       const char *kbuf;
       int ksiz;
-      TCLISTVAL(kbuf, args, 0, ksiz);
+      kbuf = tclistval(args, 0, &ksiz);
       const char *vbuf;
       int vsiz;
-      TCLISTVAL(vbuf, args, 1, vsiz);
+      vbuf = tclistval(args, 1, &vsiz);
       bool err = false;
       if(!strcmp(name, "put")){
         tcmdbput(mdb, kbuf, ksiz, vbuf, vsiz);
@@ -1301,7 +1218,7 @@ TCLIST *tcmdbmisc(TCMDB *mdb, const char *name, const TCLIST *args){
       rv = tclistnew2(1);
       const char *kbuf;
       int ksiz;
-      TCLISTVAL(kbuf, args, 0, ksiz);
+      kbuf = tclistval(args, 0, &ksiz);
       if(!tcmdbout(mdb, kbuf, ksiz)){
         tclistdel(rv);
         rv = NULL;
@@ -1314,7 +1231,7 @@ TCLIST *tcmdbmisc(TCMDB *mdb, const char *name, const TCLIST *args){
       rv = tclistnew2(1);
       const char *kbuf;
       int ksiz;
-      TCLISTVAL(kbuf, args, 0, ksiz);
+      kbuf = tclistval(args, 0, &ksiz);
       int vsiz;
       char *vbuf = tcmdbget(mdb, kbuf, ksiz, &vsiz);
       if(vbuf){
@@ -1333,8 +1250,8 @@ TCLIST *tcmdbmisc(TCMDB *mdb, const char *name, const TCLIST *args){
     for(int i = 0; i < argc; i += 2){
       const char *kbuf, *vbuf;
       int ksiz, vsiz;
-      TCLISTVAL(kbuf, args, i, ksiz);
-      TCLISTVAL(vbuf, args, i + 1, vsiz);
+      kbuf = tclistval(args, i, &ksiz);
+      vbuf = tclistval(args, i + 1, &vsiz);
       tcmdbput(mdb, kbuf, ksiz, vbuf, vsiz);
     }
   } else if(!strcmp(name, "outlist")){
@@ -1342,7 +1259,7 @@ TCLIST *tcmdbmisc(TCMDB *mdb, const char *name, const TCLIST *args){
     for(int i = 0; i < argc; i++){
       const char *kbuf;
       int ksiz;
-      TCLISTVAL(kbuf, args, i, ksiz);
+      kbuf = tclistval(args, i, &ksiz);
       tcmdbout(mdb, kbuf, ksiz);
     }
   } else if(!strcmp(name, "getlist")){
@@ -1350,7 +1267,7 @@ TCLIST *tcmdbmisc(TCMDB *mdb, const char *name, const TCLIST *args){
     for(int i = 0; i < argc; i++){
       const char *kbuf;
       int ksiz;
-      TCLISTVAL(kbuf, args, i, ksiz);
+      kbuf = tclistval(args, i, &ksiz);
       int vsiz;
       char *vbuf = tcmdbget(mdb, kbuf, ksiz, &vsiz);
       if(vbuf){
@@ -1363,11 +1280,11 @@ TCLIST *tcmdbmisc(TCMDB *mdb, const char *name, const TCLIST *args){
     if(argc > 0){
       const char *kbuf;
       int ksiz;
-      TCLISTVAL(kbuf, args, 0, ksiz);
-      int off = argc > 1 ? tcatoi(TCLISTVALPTR(args, 1)) : 0;
+      kbuf = tclistval(args, 0, &ksiz);
+      int off = argc > 1 ? tcatoi(tclistval0(args, 1)) : 0;
       if(off < 0) off = 0;
       if(off > INT_MAX / 2 - 1) off = INT_MAX - 1;
-      int len = argc > 2 ? tcatoi(TCLISTVALPTR(args, 2)) : -1;
+      int len = argc > 2 ? tcatoi(tclistval0(args, 2)) : -1;
       if(len < 0 || len > INT_MAX / 2) len = INT_MAX / 2;
       int vsiz;
       char *vbuf = tcmdbget(mdb, kbuf, ksiz, &vsiz);
@@ -1393,7 +1310,7 @@ TCLIST *tcmdbmisc(TCMDB *mdb, const char *name, const TCLIST *args){
     if(argc > 0){
       const char *kbuf;
       int ksiz;
-      TCLISTVAL(kbuf, args, 0, ksiz);
+      kbuf = tclistval(args, 0, &ksiz);
       tcmdbiterinit2(mdb, kbuf, ksiz);
     } else {
       tcmdbiterinit(mdb);
@@ -1420,7 +1337,7 @@ TCLIST *tcmdbmisc(TCMDB *mdb, const char *name, const TCLIST *args){
     tcmdbvanish(mdb);
   } else if(!strcmp(name, "regex")){
     if(argc > 0){
-      const char *regex = TCLISTVALPTR(args, 0);
+      const char *regex = tclistval0(args, 0);
       int options = REG_EXTENDED | REG_NOSUB;
       if(*regex == '*'){
         options |= REG_ICASE;
@@ -1429,7 +1346,7 @@ TCLIST *tcmdbmisc(TCMDB *mdb, const char *name, const TCLIST *args){
       regex_t rbuf;
       if(regcomp(&rbuf, regex, options) == 0){
         rv = tclistnew();
-        int max = argc > 1 ? tcatoi(TCLISTVALPTR(args, 1)) : 0;
+        int max = argc > 1 ? tcatoi(tclistval0(args, 1)) : 0;
         if(max < 1) max = INT_MAX;
         tcmdbiterinit(mdb);
         char *kbuf;
@@ -1734,100 +1651,12 @@ void tcmdbiterinit2(TCMDB *mdb, const void *kbuf, int ksiz){
 }
 
 
-/*************************************************************************************************
- * memory pool
- *************************************************************************************************/
-
-
-#define TCMPOOLUNIT    128               // allocation unit size of memory pool elements
-
-
-/* Global memory pool object. */
-TCMPOOL *tcglobalmemorypool = NULL;
-
-
-/* private function prototypes */
-static void tcmpooldelglobal(void);
-
-
-/* Create a memory pool object. */
-TCMPOOL *tcmpoolnew(void){
-  TCMPOOL *mpool;
-  TCMALLOC(mpool, sizeof(*mpool));
-  TCMALLOC(mpool->mutex, sizeof(pthread_mutex_t));
-  if(pthread_mutex_init(mpool->mutex, NULL) != 0) tcmyfatal("locking failed");
-  mpool->anum = TCMPOOLUNIT;
-  TCMALLOC(mpool->elems, sizeof(mpool->elems[0]) * mpool->anum);
-  mpool->num = 0;
-  return mpool;
-}
-
-
-/* Delete a memory pool object. */
-void tcmpooldel(TCMPOOL *mpool){
-  assert(mpool);
-  TCMPELEM *elems = mpool->elems;
-  for(int i = mpool->num - 1; i >= 0; i--){
-    elems[i].del(elems[i].ptr);
-  }
-  free(elems);
-  pthread_mutex_destroy(mpool->mutex);
-  free(mpool->mutex);
-  free(mpool);
-}
-
-
-/* Relegate an arbitrary object to a memory pool object. */
-void *tcmpoolpush(TCMPOOL *mpool, void *ptr, void (*del)(void *)){
-  assert(mpool && del);
-  if(!ptr) return NULL;
-  if(pthread_mutex_lock(mpool->mutex) != 0) tcmyfatal("locking failed");
-  int num = mpool->num;
-  if(num >= mpool->anum){
-    mpool->anum *= 2;
-    TCREALLOC(mpool->elems, mpool->elems, mpool->anum * sizeof(mpool->elems[0]));
-  }
-  mpool->elems[num].ptr = ptr;
-  mpool->elems[num].del = del;
-  mpool->num++;
-  pthread_mutex_unlock(mpool->mutex);
-  return ptr;
-}
-
-
-/* Create a list object relegated to a memory pool object. */
-TCLIST *tcmpoollistnew(TCMPOOL *mpool){
-  assert(mpool);
-  TCLIST *list = tclistnew();
-  tcmpoolpush(mpool, list, (void (*)(void *))tclistdel);
-  return list;
-}
-
-
-/* Get the global memory pool object. */
-TCMPOOL *tcmpoolglobal(void){
-  if(tcglobalmemorypool) return tcglobalmemorypool;
-  tcglobalmemorypool = tcmpoolnew();
-  atexit(tcmpooldelglobal);
-  return tcglobalmemorypool;
-}
-
-
-/* Detete the global memory pool object. */
-static void tcmpooldelglobal(void){
-  if(tcglobalmemorypool) tcmpooldel(tcglobalmemorypool);
-}
-
-
 
 /*************************************************************************************************
  * miscellaneous utilities
  *************************************************************************************************/
 
 
-#define TCRANDDEV      "/dev/urandom"    // path of the random device file
-#define TCDISTMAXLEN   4096              // maximum size of a string for distance checking
-#define TCDISTBUFSIZ   16384             // size of a distance buffer
 #define TCLDBLCOLMAX   16                // maximum number of columns of the long double
 
 
@@ -2152,11 +1981,6 @@ int tcjetlag(void){
 }
 
 
-/*************************************************************************************************
- * miscellaneous utilities (for experts)
- *************************************************************************************************/
-
-
 /* Convert a hexadecimal string to an integer. */
 int64_t tcatoih(const char *str){
   assert(str);
@@ -2226,7 +2050,7 @@ TCMAP *tcsysinfo(void){
   if(lines){
     int ln = tclistnum(lines);
     for(int i = 0; i < ln; i++){
-      const char *line = TCLISTVALPTR(lines, i);
+      const char *line = tclistval0(lines, i);
       const char *rp = strchr(line, ':');
       if(!rp) continue;
       rp++;
@@ -2247,7 +2071,7 @@ TCMAP *tcsysinfo(void){
   if(lines){
     int ln = tclistnum(lines);
     for(int i = 0; i < ln; i++){
-      const char *line = TCLISTVALPTR(lines, i);
+      const char *line = tclistval0(lines, i);
       const char *rp = strchr(line, ':');
       if(!rp) continue;
       rp++;
@@ -2272,25 +2096,11 @@ TCMAP *tcsysinfo(void){
     int cnum = 0;
     int ln = tclistnum(lines);
     for(int i = 0; i < ln; i++){
-      const char *line = TCLISTVALPTR(lines, i);
+      const char *line = tclistval0(lines, i);
       if(tcstrifwm(line, "processor")) cnum++;
     }
     if(cnum > 0) tcmapprintf(info, "corenum", "%lld", (long long)cnum);
     tclistdel(lines);
-  }
-  return info;
-#elif defined(_SYS_FREEBSD_) || defined(_SYS_MACOSX_)
-  TCMAP *info = tcmapnew2(TCMAPTINYBNUM);
-  struct rusage rbuf;
-  memset(&rbuf, 0, sizeof(rbuf));
-  if(getrusage(RUSAGE_SELF, &rbuf) == 0){
-    tcmapprintf(info, "utime", "%0.6f",
-                rbuf.ru_utime.tv_sec + rbuf.ru_utime.tv_usec / 1000000.0);
-    tcmapprintf(info, "stime", "%0.6f",
-                rbuf.ru_stime.tv_sec + rbuf.ru_stime.tv_usec / 1000000.0);
-    long tck = sysconf(_SC_CLK_TCK);
-    int64_t size = (((double)rbuf.ru_ixrss + rbuf.ru_idrss + rbuf.ru_isrss) / tck) * 1024.0;
-    if(size > 0) tcmapprintf(info, "rss", "%lld", (long long)size);
   }
   return info;
 #else
@@ -2451,10 +2261,6 @@ bool tcread(int fd, void *buf, size_t size){
 /*************************************************************************************************
  * encoding utilities
  *************************************************************************************************/
-
-
-#define TCENCBUFSIZ    32                // size of a buffer for encoding name
-#define TCXMLATBNUM    31                // bucket number of XML attributes
 
 
 /* Encode a serial object with URL encoding. */
@@ -2805,7 +2611,7 @@ char *tcmimebreak(const char *ptr, int size, TCMAP *headers, int *sp){
     TCLIST *list = tcstrsplit(hbuf, "\n");
     int ln = tclistnum(list);
     for(int i = 0; i < ln; i++){
-      const char *line = TCLISTVALPTR(list, i);
+      const char *line = tclistval0(list, i);
       const char *pv = strchr(line, ':');
       if(pv){
         char *name = tcmemdup(line, pv - line);
@@ -3117,12 +2923,6 @@ void tcwwwformdecode2(const void *ptr, int size, const char *type, TCMAP *params
     }
   }
 }
-
-
-/*************************************************************************************************
- * features for experts
- *************************************************************************************************/
-
 
 
 /* Show error message on the standard error output and exit. */

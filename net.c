@@ -2641,7 +2641,7 @@ bool tcrdbopen2(TCRDB *rdb, const char *expr){
     TCLIST *elems = tcstrsplit(pv + 1, "#");
     int ln = tclistnum(elems);
     for(int i = 0; i < ln; i++){
-      const char *elem = TCLISTVALPTR(elems, i);
+      const char *elem = tclistval0(elems, i);
       pv = strchr(elem, '=');
       if(!pv) continue;
       *(pv++) = '\0';

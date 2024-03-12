@@ -431,7 +431,7 @@ static int runget(int argc, char **argv){
 /* parse arguments of mget command */
 static int runmget(int argc, char **argv){
   char *host = NULL;
-  TCLIST *keys = tcmpoollistnew(tcmpoolglobal());
+  TCLIST *keys = tclistnew();
   int port = TTDEFPORT;
   bool sx = false;
   int sep = -1;
@@ -474,6 +474,7 @@ static int runmget(int argc, char **argv){
     }
   }
   int rv = procmget(host, port, keys, sep, px);
+  tclistdel(keys);
   return rv;
 }
 
@@ -548,7 +549,7 @@ static int runvanish(int argc, char **argv){
 static int runmisc(int argc, char **argv){
   char *host = NULL;
   char *func = NULL;
-  TCLIST *args = tcmpoollistnew(tcmpoolglobal());
+  TCLIST *args = tclistnew();
   int port = TTDEFPORT;
   int opts = 0;
   bool sx = false;
@@ -593,6 +594,7 @@ static int runmisc(int argc, char **argv){
   }
   if(!host || !func) usage();
   int rv = procmisc(host, port, func, opts, args, sep, px);
+  tclistdel(args);
   return rv;
 }
 
